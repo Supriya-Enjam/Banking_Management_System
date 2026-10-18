@@ -10,6 +10,7 @@ import {
   timingSafeEqual,
 } from "crypto";
 
+import { Session } from "../models/Session";
 import { Customer } from "../models/Customer";
 import { LoginOtp } from "../models/LoginOtp";
 import authenticate from "../middleware/authenticate";
@@ -21,6 +22,7 @@ const authRoutes = Router();
 
 const OTP_EXPIRY_MS = 5 * 60 * 1000;
 const MAX_OTP_ATTEMPTS = 5;
+const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
 
 const DEMO_STAFF_EMAIL = "staff@vaultbank.com";
 const DEMO_ADMIN_EMAIL = "admin@vaultbank.com";
@@ -28,7 +30,9 @@ const DEMO_ADMIN_EMAIL = "admin@vaultbank.com";
 const isDevelopment = process.env.NODE_ENV !== "production";
 
 const isDemoStaffOrAdmin = (email: string): boolean =>
-  [DEMO_STAFF_EMAIL, DEMO_ADMIN_EMAIL].includes(email.trim().toLowerCase());
+  [DEMO_STAFF_EMAIL, DEMO_ADMIN_EMAIL].includes(
+    email.trim().toLowerCase()
+  );
 
 // ============================================================
 // VALIDATION SCHEMAS
@@ -101,14 +105,15 @@ const getOtpPepper = (): string => {
   return pepper;
 };
 
-const createVaultBankToken = (customer: {
-  id: string;
-  role: string;
-}): string =>
+const createVaultBankToken = (
+  customer: { id: string; role: string },
+  sessionId: string
+): string =>
   jwt.sign(
     {
       sub: customer.id,
       role: customer.role,
+      sid: sessionId,
     },
     getJwtSecret(),
     {
@@ -129,7 +134,10 @@ const otpMatches = (
   otp: string,
   storedHash: string
 ): boolean => {
-  if (typeof storedHash !== "string" || !/^[a-f0-9]{64}$/i.test(storedHash)) {
+  if (
+    typeof storedHash !== "string" ||
+    !/^[a-f0-9]{64}$/i.test(storedHash)
+  ) {
     return false;
   }
 
@@ -168,6 +176,12 @@ const customerResponse = (customer: {
 const maskEmail = (email: string): string =>
   email.replace(/^(.{1,2})[^@]*(@.*)$/, "$1***$2");
 
+function useTerminalOtpDescription(email: string): string {
+  return isDevelopment && isDemoStaffOrAdmin(email)
+    ? "Password accepted; development demo OTP generated in backend terminal."
+    : "Password accepted; email second-factor challenge created.";
+}
+
 // ============================================================
 // CREATE OTP CHALLENGE
 // ============================================================
@@ -182,15 +196,14 @@ const createOtpChallenge = async (customer: {
   const otp = randomInt(0, 1_000_000).toString().padStart(6, "0");
   const now = new Date();
 
-  const useTerminalOtp = isDevelopment && isDemoStaffOrAdmin(email);
+  const useTerminalOtp =
+    isDevelopment && isDemoStaffOrAdmin(email);
 
-  // Invalidate previous unused challenges for this account.
   await LoginOtp.deleteMany({
     customerId: customer._id,
     consumedAt: { $exists: false },
   });
 
-  // Store only the HMAC hash, never the plaintext OTP.
   await LoginOtp.create({
     challengeId,
     customerId: customer._id,
@@ -202,7 +215,6 @@ const createOtpChallenge = async (customer: {
   });
 
   if (useTerminalOtp) {
-    // Development-only demo login. Do not send email to the fake mailbox.
     console.log("\n========================================");
     console.log("       VAULTBANK DEMO LOGIN OTP");
     console.log("========================================");
@@ -211,7 +223,6 @@ const createOtpChallenge = async (customer: {
     console.log("Expires in: 5 minutes");
     console.log("========================================\n");
   } else {
-    // Real users continue to receive their OTP by email.
     try {
       await sendLoginOtp(email, otp);
     } catch (error: unknown) {
@@ -341,7 +352,6 @@ authRoutes.post(
       });
     } catch (error: unknown) {
       console.error("Registration error:", error);
-
       res.status(500).json({
         success: false,
         message: "Unable to register right now. Please try again later.",
@@ -351,7 +361,7 @@ authRoutes.post(
 );
 
 // ============================================================
-// LOGIN STEP 1 — VERIFY PASSWORD AND CREATE OTP
+// LOGIN STEP 1 — PASSWORD AND OTP
 // ============================================================
 
 authRoutes.post(
@@ -369,8 +379,6 @@ authRoutes.post(
       }
 
       const email = parsed.data.email.toLowerCase();
-      const { password } = parsed.data;
-
       const customer = await Customer.findOne({ email }).select(
         "+passwordHash"
       );
@@ -385,7 +393,7 @@ authRoutes.post(
       }
 
       const passwordMatches = await bcrypt.compare(
-        password,
+        parsed.data.password,
         customer.passwordHash
       );
 
@@ -421,7 +429,6 @@ authRoutes.post(
         challenge = await createOtpChallenge(customer);
       } catch (error: unknown) {
         console.error("Login OTP creation/delivery failed:", error);
-
         res.status(503).json({
           success: false,
           message:
@@ -453,23 +460,16 @@ authRoutes.post(
       });
     } catch (error: unknown) {
       console.error("Login initiation error:", error);
-
       res.status(500).json({
         success: false,
-        message: "Unable to start login right now. Please try again later.",
+        message: "Unable to start login right now. Please try again.",
       });
     }
   }
 );
 
-function useTerminalOtpDescription(email: string): string {
-  return isDevelopment && isDemoStaffOrAdmin(email)
-    ? "Password accepted; development demo OTP generated in backend terminal."
-    : "Password accepted; email second-factor challenge created.";
-}
-
 // ============================================================
-// LOGIN STEP 2 — VERIFY OTP
+// LOGIN STEP 2 — VERIFY OTP AND CREATE SESSION
 // ============================================================
 
 authRoutes.post(
@@ -488,7 +488,6 @@ authRoutes.post(
 
       const { challengeId, otp } = parsed.data;
 
-      // Increment attempts and explicitly select the hidden hash.
       const challenge = await LoginOtp.findOneAndUpdate(
         {
           challengeId,
@@ -513,10 +512,6 @@ authRoutes.post(
         typeof challenge.otpHash !== "string" ||
         !/^[a-f0-9]{64}$/i.test(challenge.otpHash)
       ) {
-        console.error(
-          "OTP verification failed: stored OTP hash is missing or invalid."
-        );
-
         res.status(500).json({
           success: false,
           message:
@@ -537,12 +532,12 @@ authRoutes.post(
         return;
       }
 
-      // Consume the challenge atomically before issuing a JWT.
       const consumed = await LoginOtp.findOneAndUpdate(
         {
           _id: challenge._id,
           consumedAt: { $exists: false },
           expiresAt: { $gt: new Date() },
+          attempts: { $lte: MAX_OTP_ATTEMPTS },
         },
         { $set: { consumedAt: new Date() } },
         { returnDocument: "after" }
@@ -567,10 +562,30 @@ authRoutes.post(
         return;
       }
 
-      const token = createVaultBankToken({
-        id: customer.id,
+      // Persist the session before issuing the JWT.
+      const sessionId = randomUUID();
+      const sessionExpiry = new Date(
+        Date.now() + SESSION_DURATION_MS
+      );
+
+      await Session.create({
+        sessionId,
+        customerId: customer._id,
         role: customer.role,
+        userAgent: req.get("user-agent") || "Unknown",
+        ipAddress: req.ip || "Unknown",
+        lastActivityAt: new Date(),
+        expiresAt: sessionExpiry,
+        revokedAt: null,
       });
+
+      const token = createVaultBankToken(
+        {
+          id: customer.id,
+          role: customer.role,
+        },
+        sessionId
+      );
 
       await logAudit({
         userId: customer._id.toString(),
@@ -586,12 +601,11 @@ authRoutes.post(
         success: true,
         message: "Two-factor verification successful.",
         token,
-        expiresIn: 86400,
+        expiresIn: Math.floor(SESSION_DURATION_MS / 1000),
         customer: customerResponse(customer),
       });
     } catch (error: unknown) {
       console.error("OTP verification error:", error);
-
       res.status(500).json({
         success: false,
         message: "Unable to verify the code right now. Please try again.",
@@ -601,7 +615,7 @@ authRoutes.post(
 );
 
 // ============================================================
-// GOOGLE SIGN-IN — IDENTITY VERIFICATION AND OTP
+// GOOGLE SIGN-IN — VERIFY IDENTITY AND SEND OTP
 // ============================================================
 
 authRoutes.post(
@@ -732,7 +746,6 @@ authRoutes.post(
         challenge = await createOtpChallenge(customer);
       } catch (error: unknown) {
         console.error("Google login OTP creation/delivery failed:", error);
-
         res.status(503).json({
           success: false,
           message:
@@ -825,7 +838,6 @@ authRoutes.get(
       });
     } catch (error: unknown) {
       console.error("Profile lookup error:", error);
-
       res.status(500).json({
         success: false,
         message: "Unable to retrieve user profile.",
@@ -901,7 +913,6 @@ authRoutes.put(
       });
     } catch (error: unknown) {
       console.error("Profile update error:", error);
-
       res.status(500).json({
         success: false,
         message: "Failed to update profile.",
@@ -982,26 +993,217 @@ authRoutes.put(
 
       await LoginOtp.deleteMany({ customerId: customer._id });
 
+      // Revoke all sessions after a password change.
+      await Session.updateMany(
+        {
+          customerId: customer._id,
+          revokedAt: null,
+        },
+        { $set: { revokedAt: new Date() } }
+      );
+
       await logAudit({
         userId: customer._id.toString(),
         userName: customer.name,
         userEmail: customer.email,
         userRole: customer.role,
         action: "PASSWORD_CHANGED",
-        details: "User changed their account password.",
+        details:
+          "User changed their account password; active sessions were revoked.",
         severity: "info",
       });
 
       res.status(200).json({
         success: true,
-        message: "Password updated successfully.",
+        message:
+          "Password updated successfully. Please log in again on your devices.",
       });
     } catch (error: unknown) {
       console.error("Change password error:", error);
-
       res.status(500).json({
         success: false,
         message: "Failed to change password.",
+      });
+    }
+  }
+);
+
+// ============================================================
+// LOGOUT — REVOKE CURRENT SESSION
+// Requires authenticate.ts to expose sessionId.
+// ============================================================
+
+authRoutes.post(
+  "/logout",
+  authenticate,
+  async (_req: Request, res: Response): Promise<void> => {
+    try {
+      const user = res.locals.authenticatedUser as
+        | {
+            customerId: string;
+            role: string;
+            sessionId?: string;
+          }
+        | undefined;
+
+      if (!user?.sessionId) {
+        res.status(401).json({
+          success: false,
+          message: "No active session was found.",
+        });
+        return;
+      }
+
+      const session = await Session.findOneAndUpdate(
+        {
+          sessionId: user.sessionId,
+          customerId: user.customerId,
+          revokedAt: null,
+          expiresAt: { $gt: new Date() },
+        },
+        { $set: { revokedAt: new Date() } },
+        { new: true }
+      );
+
+      if (!session) {
+        res.status(401).json({
+          success: false,
+          message: "This session is already revoked or expired.",
+        });
+        return;
+      }
+
+      res.status(200).json({
+        success: true,
+        message: "Logged out successfully.",
+      });
+    } catch (error: unknown) {
+      console.error("Logout error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Unable to log out right now.",
+      });
+    }
+  }
+);
+
+/* ============================================================
+   SESSION MANAGEMENT — LIST AND REVOKE OWN SESSIONS
+============================================================ */
+
+// GET /sessions — list the current user's active sessions
+authRoutes.get(
+  "/sessions",
+  authenticate,
+  async (_req: Request, res: Response): Promise<void> => {
+    try {
+      const user = res.locals.authenticatedUser;
+
+      if (!user) {
+        res.status(401).json({
+          success: false,
+          message: "Authentication required.",
+        });
+        return;
+      }
+
+      const now = new Date();
+
+      const sessions = await Session.find({
+        customerId: user.customerId,
+        revokedAt: null,
+        expiresAt: { $gt: now },
+      })
+        .select(
+          "sessionId userAgent ipAddress lastActivityAt expiresAt createdAt"
+        )
+        .sort({ lastActivityAt: -1 })
+        .lean();
+
+      res.status(200).json({
+        success: true,
+        count: sessions.length,
+        sessions: sessions.map((session) => ({
+          sessionId: session.sessionId,
+          userAgent: session.userAgent,
+          ipAddress: session.ipAddress,
+          lastActivityAt: session.lastActivityAt,
+          expiresAt: session.expiresAt,
+          createdAt: session.createdAt,
+          isCurrent: session.sessionId === user.sessionId,
+        })),
+      });
+    } catch (error: unknown) {
+      console.error("List sessions error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Unable to retrieve active sessions.",
+      });
+    }
+  }
+);
+
+// DELETE /sessions/:sessionId — revoke one of the user's sessions
+authRoutes.delete(
+  "/sessions/:sessionId",
+  authenticate,
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const user = res.locals.authenticatedUser;
+
+      if (!user) {
+        res.status(401).json({
+          success: false,
+          message: "Authentication required.",
+        });
+        return;
+      }
+
+      const sessionId = req.params.sessionId;
+
+      if (
+        typeof sessionId !== "string" ||
+        sessionId.length > 100
+      ) {
+        res.status(400).json({
+          success: false,
+          message: "Invalid session ID.",
+        });
+        return;
+      }
+
+      const revokedSession = await Session.findOneAndUpdate(
+        {
+          sessionId,
+          customerId: user.customerId,
+          revokedAt: null,
+          expiresAt: { $gt: new Date() },
+        },
+        {
+          $set: { revokedAt: new Date() },
+        },
+        { new: true }
+      ).select("sessionId");
+
+      if (!revokedSession) {
+        res.status(404).json({
+          success: false,
+          message:
+            "Active session not found for this account.",
+        });
+        return;
+      }
+
+      res.status(200).json({
+        success: true,
+        message: "Session revoked successfully.",
+        sessionId: revokedSession.sessionId,
+      });
+    } catch (error: unknown) {
+      console.error("Revoke session error:", error);
+      res.status(500).json({
+        success: false,
+        message: "Unable to revoke this session.",
       });
     }
   }

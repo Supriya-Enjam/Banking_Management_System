@@ -1,4 +1,3 @@
-
 const API_BASE_URL = "http://localhost:5000/api";
 
 // =========================================================
@@ -168,6 +167,21 @@ export interface StaffMetrics {
   activeStaffStreamClients: number;
 }
 
+export interface ActiveSession {
+  sessionId: string;
+  userAgent: string;
+  ipAddress: string;
+  lastActivityAt: string;
+  expiresAt: string;
+  createdAt: string;
+  isCurrent: boolean;
+}
+
+export interface ActiveSessionsResponse {
+  success: boolean;
+  sessions: ActiveSession[];
+}
+
 // =========================================================
 // AUTHENTICATION RESPONSE TYPES
 // =========================================================
@@ -189,9 +203,7 @@ export interface AuthSuccessResponse {
   customer: Customer;
 }
 
-export type AuthResponse =
-  | AuthChallengeResponse
-  | AuthSuccessResponse;
+export type AuthResponse = AuthChallengeResponse | AuthSuccessResponse;
 
 export interface ApiMessageResponse {
   success: boolean;
@@ -224,8 +236,7 @@ async function request<T>(
 
   if (!response.ok || data.success === false) {
     throw new Error(
-      data.message ||
-        `Request failed with status ${response.status}`
+      data.message || `Request failed with status ${response.status}`
     );
   }
 
@@ -258,11 +269,6 @@ export const api = {
   // AUTHENTICATION
   // -------------------------------------------------------
 
-  /**
-   * Login can return either:
-   * 1. An OTP challenge, requiring verification.
-   * 2. A successful authenticated session with a VaultBank JWT.
-   */
   login(email: string, password: string) {
     return request<AuthResponse>("/auth/login", {
       method: "POST",
@@ -270,10 +276,6 @@ export const api = {
     });
   },
 
-  /**
-   * Exchange Firebase ID token for a VaultBank JWT
-   * or an email OTP challenge.
-   */
   googleLogin(idToken: string) {
     return request<AuthResponse>("/auth/google", {
       method: "POST",
@@ -281,22 +283,11 @@ export const api = {
     });
   },
 
-  /**
-   * Verify the email OTP challenge.
-   * The backend should issue the VaultBank JWT only
-   * after the OTP has been successfully verified.
-   */
   verifyLoginOtp(challengeId: string, otp: string) {
-    return request<AuthSuccessResponse>(
-      "/auth/verify-login-otp",
-      {
-        method: "POST",
-        body: JSON.stringify({
-          challengeId,
-          otp,
-        }),
-      }
-    );
+    return request<AuthSuccessResponse>("/auth/verify-login-otp", {
+      method: "POST",
+      body: JSON.stringify({ challengeId, otp }),
+    });
   },
 
   register(data: {
@@ -319,50 +310,47 @@ export const api = {
   },
 
   getMe(token: string) {
-    return request<{
-      success: boolean;
-      customer: Customer;
-    }>("/auth/me", {}, token);
+    return request<{ success: boolean; customer: Customer }>(
+      "/auth/me",
+      {},
+      token
+    );
   },
 
   updateProfile(
     token: string,
-    data: {
-      name?: string;
-      phone?: string;
-      address?: string;
-    }
+    data: { name?: string; phone?: string; address?: string }
   ) {
-    return request<{
-      success: boolean;
-      message: string;
-      customer: Customer;
-    }>(
+    return request<{ success: boolean; message: string; customer: Customer }>(
       "/auth/profile",
-      {
-        method: "PUT",
-        body: JSON.stringify(data),
-      },
+      { method: "PUT", body: JSON.stringify(data) },
       token
     );
   },
 
   changePassword(
     token: string,
-    data: {
-      currentPassword: string;
-      newPassword: string;
-    }
+    data: { currentPassword: string; newPassword: string }
   ) {
-    return request<{
-      success: boolean;
-      message: string;
-    }>(
+    return request<{ success: boolean; message: string }>(
       "/auth/change-password",
-      {
-        method: "PUT",
-        body: JSON.stringify(data),
-      },
+      { method: "PUT", body: JSON.stringify(data) },
+      token
+    );
+  },
+
+  // -------------------------------------------------------
+  // SESSION MANAGEMENT
+  // -------------------------------------------------------
+
+  getActiveSessions(token: string) {
+    return request<ActiveSessionsResponse>("/auth/sessions", {}, token);
+  },
+
+  revokeSession(token: string, sessionId: string) {
+    return request<ApiMessageResponse>(
+      `/auth/sessions/${encodeURIComponent(sessionId)}`,
+      { method: "DELETE" },
       token
     );
   },
@@ -372,41 +360,30 @@ export const api = {
   // -------------------------------------------------------
 
   getAccounts(token: string) {
-    return request<{
-      success: boolean;
-      count: number;
-      accounts: BankAccount[];
-    }>("/accounts", {}, token);
+    return request<{ success: boolean; count: number; accounts: BankAccount[] }>(
+      "/accounts",
+      {},
+      token
+    );
   },
 
-  createAccount(
-    token: string,
-    accountType: string,
-    initialDeposit = 0
-  ) {
-    return request<{
-      success: boolean;
-      message: string;
-      account: BankAccount;
-    }>(
+  createAccount(token: string, accountType: string, initialDeposit = 0) {
+    return request<{ success: boolean; message: string; account: BankAccount }>(
       "/accounts",
       {
         method: "POST",
-        body: JSON.stringify({
-          accountType,
-          initialDeposit,
-        }),
+        body: JSON.stringify({ accountType, initialDeposit }),
       },
       token
     );
   },
 
   getAllAccounts(token: string) {
-    return request<{
-      success: boolean;
-      count: number;
-      accounts: BankAccount[];
-    }>("/accounts/all", {}, token);
+    return request<{ success: boolean; count: number; accounts: BankAccount[] }>(
+      "/accounts/all",
+      {},
+      token
+    );
   },
 
   updateAccountStatus(
@@ -415,18 +392,11 @@ export const api = {
     status?: string,
     dailyLimitRupees?: number
   ) {
-    return request<{
-      success: boolean;
-      message: string;
-      account: any;
-    }>(
+    return request<{ success: boolean; message: string; account: any }>(
       `/accounts/${encodeURIComponent(id)}/status`,
       {
         method: "PATCH",
-        body: JSON.stringify({
-          status,
-          dailyLimitRupees,
-        }),
+        body: JSON.stringify({ status, dailyLimitRupees }),
       },
       token
     );
@@ -449,14 +419,9 @@ export const api = {
     } = {}
   ) {
     const q = new URLSearchParams();
-
     if (params.page) q.set("page", String(params.page));
     if (params.limit) q.set("limit", String(params.limit));
-
-    if (params.type && params.type !== "all") {
-      q.set("type", params.type);
-    }
-
+    if (params.type && params.type !== "all") q.set("type", params.type);
     if (params.search) q.set("search", params.search);
     if (params.startDate) q.set("startDate", params.startDate);
     if (params.endDate) q.set("endDate", params.endDate);
@@ -465,12 +430,7 @@ export const api = {
     return request<{
       success: boolean;
       count: number;
-      pagination: {
-        page: number;
-        limit: number;
-        total: number;
-        totalPages: number;
-      };
+      pagination: { page: number; limit: number; total: number; totalPages: number };
       transactions: BankTransaction[];
     }>(`/transactions?${q.toString()}`, {}, token);
   },
@@ -482,44 +442,22 @@ export const api = {
     description?: string,
     category?: string
   ) {
-    return request<{
-      success: boolean;
-      message: string;
-      transaction: any;
-    }>(
+    return request<{ success: boolean; message: string; transaction: any }>(
       "/transactions/deposit",
       {
         method: "POST",
-        body: JSON.stringify({
-          accountId,
-          amount,
-          description,
-          category,
-        }),
+        body: JSON.stringify({ accountId, amount, description, category }),
       },
       token
     );
   },
 
-  withdraw(
-    token: string,
-    accountId: string,
-    amount: number,
-    description?: string
-  ) {
-    return request<{
-      success: boolean;
-      message: string;
-      transaction: any;
-    }>(
+  withdraw(token: string, accountId: string, amount: number, description?: string) {
+    return request<{ success: boolean; message: string; transaction: any }>(
       "/transactions/withdraw",
       {
         method: "POST",
-        body: JSON.stringify({
-          accountId,
-          amount,
-          description,
-        }),
+        body: JSON.stringify({ accountId, amount, description }),
       },
       token
     );
@@ -535,25 +473,15 @@ export const api = {
       category?: string;
     }
   ) {
-    return request<{
-      success: boolean;
-      message: string;
-      transaction: any;
-    }>(
+    return request<{ success: boolean; message: string; transaction: any }>(
       "/transactions/transfer",
-      {
-        method: "POST",
-        body: JSON.stringify(data),
-      },
+      { method: "POST", body: JSON.stringify(data) },
       token
     );
   },
 
   getReceipt(token: string, reference: string) {
-    return request<{
-      success: boolean;
-      receipt: any;
-    }>(
+    return request<{ success: boolean; receipt: any }>(
       `/transactions/receipt/${encodeURIComponent(reference)}`,
       {},
       token
@@ -571,38 +499,22 @@ export const api = {
     } = {}
   ) {
     const q = new URLSearchParams();
-
     if (params.page) q.set("page", String(params.page));
     if (params.limit) q.set("limit", String(params.limit));
-
-    if (params.type && params.type !== "all") {
-      q.set("type", params.type);
-    }
-
-    if (params.status && params.status !== "all") {
-      q.set("status", params.status);
-    }
-
+    if (params.type && params.type !== "all") q.set("type", params.type);
+    if (params.status && params.status !== "all") q.set("status", params.status);
     if (params.search) q.set("search", params.search);
 
     return request<{
       success: boolean;
       count: number;
-      pagination: {
-        page: number;
-        limit: number;
-        total: number;
-        totalPages: number;
-      };
+      pagination: { page: number; limit: number; total: number; totalPages: number };
       transactions: BankTransaction[];
     }>(`/transactions/all?${q.toString()}`, {}, token);
   },
 
   getTransactionStats(token: string) {
-    return request<{
-      success: boolean;
-      stats: any;
-    }>("/transactions/stats", {}, token);
+    return request<{ success: boolean; stats: any }>("/transactions/stats", {}, token);
   },
 
   // -------------------------------------------------------
@@ -610,11 +522,11 @@ export const api = {
   // -------------------------------------------------------
 
   getBeneficiaries(token: string) {
-    return request<{
-      success: boolean;
-      count: number;
-      beneficiaries: Beneficiary[];
-    }>("/beneficiaries", {}, token);
+    return request<{ success: boolean; count: number; beneficiaries: Beneficiary[] }>(
+      "/beneficiaries",
+      {},
+      token
+    );
   },
 
   lookupAccount(token: string, accountNumber: string) {
@@ -624,11 +536,7 @@ export const api = {
       isInternal: boolean;
       customerName?: string;
       accountType?: string;
-    }>(
-      `/beneficiaries/lookup/${encodeURIComponent(accountNumber)}`,
-      {},
-      token
-    );
+    }>(`/beneficiaries/lookup/${encodeURIComponent(accountNumber)}`, {}, token);
   },
 
   addBeneficiary(
@@ -642,25 +550,15 @@ export const api = {
       maxLimitRupees?: number;
     }
   ) {
-    return request<{
-      success: boolean;
-      message: string;
-      beneficiary: Beneficiary;
-    }>(
+    return request<{ success: boolean; message: string; beneficiary: Beneficiary }>(
       "/beneficiaries",
-      {
-        method: "POST",
-        body: JSON.stringify(data),
-      },
+      { method: "POST", body: JSON.stringify(data) },
       token
     );
   },
 
   deleteBeneficiary(token: string, id: string) {
-    return request<{
-      success: boolean;
-      message: string;
-    }>(
+    return request<{ success: boolean; message: string }>(
       `/beneficiaries/${encodeURIComponent(id)}`,
       { method: "DELETE" },
       token
@@ -671,11 +569,7 @@ export const api = {
   // LOANS
   // -------------------------------------------------------
 
-  calculateLoan(
-    amountRupees: number,
-    loanType: string,
-    tenureMonths: number
-  ) {
+  calculateLoan(amountRupees: number, loanType: string, tenureMonths: number) {
     return request<{
       success: boolean;
       interestRate: number;
@@ -684,11 +578,7 @@ export const api = {
       totalRepaymentRupees: number;
     }>("/loans/calculate", {
       method: "POST",
-      body: JSON.stringify({
-        amountRupees,
-        loanType,
-        tenureMonths,
-      }),
+      body: JSON.stringify({ amountRupees, loanType, tenureMonths }),
     });
   },
 
@@ -702,34 +592,27 @@ export const api = {
       purpose: string;
     }
   ) {
-    return request<{
-      success: boolean;
-      message: string;
-      loan: any;
-    }>(
+    return request<{ success: boolean; message: string; loan: any }>(
       "/loans/apply",
-      {
-        method: "POST",
-        body: JSON.stringify(data),
-      },
+      { method: "POST", body: JSON.stringify(data) },
       token
     );
   },
 
   getMyLoans(token: string) {
-    return request<{
-      success: boolean;
-      count: number;
-      loans: Loan[];
-    }>("/loans/my", {}, token);
+    return request<{ success: boolean; count: number; loans: Loan[] }>(
+      "/loans/my",
+      {},
+      token
+    );
   },
 
   getAllLoans(token: string) {
-    return request<{
-      success: boolean;
-      count: number;
-      loans: Loan[];
-    }>("/loans/all", {}, token);
+    return request<{ success: boolean; count: number; loans: Loan[] }>(
+      "/loans/all",
+      {},
+      token
+    );
   },
 
   reviewLoan(
@@ -738,26 +621,15 @@ export const api = {
     action: "approve" | "reject",
     notes?: string
   ) {
-    return request<{
-      success: boolean;
-      message: string;
-      loan: any;
-    }>(
+    return request<{ success: boolean; message: string; loan: any }>(
       `/loans/${encodeURIComponent(id)}/review`,
-      {
-        method: "PATCH",
-        body: JSON.stringify({ action, notes }),
-      },
+      { method: "PATCH", body: JSON.stringify({ action, notes }) },
       token
     );
   },
 
   payLoanEmi(token: string, loanId: string) {
-    return request<{
-      success: boolean;
-      message: string;
-      loan: any;
-    }>(
+    return request<{ success: boolean; message: string; loan: any }>(
       `/loans/${encodeURIComponent(loanId)}/pay-emi`,
       { method: "POST" },
       token
@@ -776,49 +648,31 @@ export const api = {
       maturityAmountRupees: number;
     }>("/fixed-deposits/preview", {
       method: "POST",
-      body: JSON.stringify({
-        amountRupees,
-        tenureMonths,
-      }),
+      body: JSON.stringify({ amountRupees, tenureMonths }),
     });
   },
 
   openFd(
     token: string,
-    data: {
-      accountId: string;
-      amountRupees: number;
-      tenureMonths: number;
-    }
+    data: { accountId: string; amountRupees: number; tenureMonths: number }
   ) {
-    return request<{
-      success: boolean;
-      message: string;
-      fixedDeposit: FixedDeposit;
-    }>(
+    return request<{ success: boolean; message: string; fixedDeposit: FixedDeposit }>(
       "/fixed-deposits/open",
-      {
-        method: "POST",
-        body: JSON.stringify(data),
-      },
+      { method: "POST", body: JSON.stringify(data) },
       token
     );
   },
 
   getFixedDeposits(token: string) {
-    return request<{
-      success: boolean;
-      count: number;
-      fixedDeposits: FixedDeposit[];
-    }>("/fixed-deposits", {}, token);
+    return request<{ success: boolean; count: number; fixedDeposits: FixedDeposit[] }>(
+      "/fixed-deposits",
+      {},
+      token
+    );
   },
 
   liquidateFd(token: string, id: string) {
-    return request<{
-      success: boolean;
-      message: string;
-      payoutAmountRupees: number;
-    }>(
+    return request<{ success: boolean; message: string; payoutAmountRupees: number }>(
       `/fixed-deposits/${encodeURIComponent(id)}/liquidate`,
       { method: "POST" },
       token
@@ -838,10 +692,7 @@ export const api = {
   },
 
   markNotificationRead(token: string, id: string) {
-    return request<{
-      success: boolean;
-      message: string;
-    }>(
+    return request<{ success: boolean; message: string }>(
       `/notifications/${encodeURIComponent(id)}/read`,
       { method: "PATCH" },
       token
@@ -849,10 +700,7 @@ export const api = {
   },
 
   markAllNotificationsRead(token: string) {
-    return request<{
-      success: boolean;
-      message: string;
-    }>(
+    return request<{ success: boolean; message: string }>(
       "/notifications/mark-all-read",
       { method: "POST" },
       token
@@ -864,22 +712,20 @@ export const api = {
   // -------------------------------------------------------
 
   getAdminMetrics(token: string) {
-    return request<{
-      success: boolean;
-      metrics: AdminMetrics;
-    }>("/admin/metrics", {}, token);
+    return request<{ success: boolean; metrics: AdminMetrics }>(
+      "/admin/metrics",
+      {},
+      token
+    );
   },
 
   getAdminCustomers(token: string, search?: string) {
-    const query = search
-      ? `?search=${encodeURIComponent(search)}`
-      : "";
-
-    return request<{
-      success: boolean;
-      count: number;
-      customers: any[];
-    }>(`/admin/customers${query}`, {}, token);
+    const query = search ? `?search=${encodeURIComponent(search)}` : "";
+    return request<{ success: boolean; count: number; customers: any[] }>(
+      `/admin/customers${query}`,
+      {},
+      token
+    );
   },
 
   updateAdminCustomer(
@@ -892,52 +738,31 @@ export const api = {
       role?: string;
     }
   ) {
-    return request<{
-      success: boolean;
-      message: string;
-      customer: any;
-    }>(
+    return request<{ success: boolean; message: string; customer: any }>(
       `/admin/customers/${encodeURIComponent(id)}`,
-      {
-        method: "PATCH",
-        body: JSON.stringify(data),
-      },
+      { method: "PATCH", body: JSON.stringify(data) },
       token
     );
   },
 
   getAdminAuditLogs(
     token: string,
-    params: {
-      severity?: string;
-      action?: string;
-      limit?: number;
-    } = {}
+    params: { severity?: string; action?: string; limit?: number } = {}
   ) {
     const q = new URLSearchParams();
-
-    if (params.severity && params.severity !== "all") {
-      q.set("severity", params.severity);
-    }
-
-    if (params.action && params.action !== "all") {
-      q.set("action", params.action);
-    }
-
+    if (params.severity && params.severity !== "all") q.set("severity", params.severity);
+    if (params.action && params.action !== "all") q.set("action", params.action);
     if (params.limit) q.set("limit", String(params.limit));
 
-    return request<{
-      success: boolean;
-      count: number;
-      logs: AuditLogItem[];
-    }>(`/admin/audit-logs?${q.toString()}`, {}, token);
+    return request<{ success: boolean; count: number; logs: AuditLogItem[] }>(
+      `/admin/audit-logs?${q.toString()}`,
+      {},
+      token
+    );
   },
 
   getAdminReports(token: string) {
-    return request<{
-      success: boolean;
-      reports: any;
-    }>("/admin/reports", {}, token);
+    return request<{ success: boolean; reports: any }>("/admin/reports", {}, token);
   },
 
   // -------------------------------------------------------
@@ -945,17 +770,19 @@ export const api = {
   // -------------------------------------------------------
 
   getStaffMetrics(token: string) {
-    return request<{
-      success: boolean;
-      metrics: StaffMetrics;
-    }>("/staff/metrics", {}, token);
+    return request<{ success: boolean; metrics: StaffMetrics }>(
+      "/staff/metrics",
+      {},
+      token
+    );
   },
 
   getStaffKycCustomers(token: string) {
-    return request<{
-      success: boolean;
-      customers: any[];
-    }>("/staff/kyc-customers", {}, token);
+    return request<{ success: boolean; customers: any[] }>(
+      "/staff/kyc-customers",
+      {},
+      token
+    );
   },
 
   updateKycStatus(
@@ -964,75 +791,48 @@ export const api = {
     status: "verified" | "rejected",
     remarks?: string
   ) {
-    return request<{
-      success: boolean;
-      message: string;
-      customer: any;
-    }>(
+    return request<{ success: boolean; message: string; customer: any }>(
       `/staff/kyc/${encodeURIComponent(id)}`,
-      {
-        method: "PATCH",
-        body: JSON.stringify({ status, remarks }),
-      },
+      { method: "PATCH", body: JSON.stringify({ status, remarks }) },
       token
     );
   },
 
   tellerDeposit(
     token: string,
-    data: {
-      accountNumber: string;
-      amountRupees: number;
-      remarks?: string;
-    }
+    data: { accountNumber: string; amountRupees: number; remarks?: string }
   ) {
-    return request<{
-      success: boolean;
-      message: string;
-      transaction: any;
-    }>(
+    return request<{ success: boolean; message: string; transaction: any }>(
       "/staff/teller-deposit",
-      {
-        method: "POST",
-        body: JSON.stringify(data),
-      },
+      { method: "POST", body: JSON.stringify(data) },
       token
     );
   },
 
   tellerWithdraw(
     token: string,
-    data: {
-      accountNumber: string;
-      amountRupees: number;
-      remarks?: string;
-    }
+    data: { accountNumber: string; amountRupees: number; remarks?: string }
   ) {
-    return request<{
-      success: boolean;
-      message: string;
-      transaction: any;
-    }>(
+    return request<{ success: boolean; message: string; transaction: any }>(
       "/staff/teller-withdraw",
-      {
-        method: "POST",
-        body: JSON.stringify(data),
-      },
+      { method: "POST", body: JSON.stringify(data) },
       token
     );
   },
 
   getLiveActivity(token: string, limit = 30) {
-    return request<{
-      success: boolean;
-      count: number;
-      activities: any[];
-    }>(`/staff/live-activity?limit=${limit}`, {}, token);
+    return request<{ success: boolean; count: number; activities: any[] }>(
+      `/staff/live-activity?limit=${limit}`,
+      {},
+      token
+    );
   },
 
   /**
-   * Server-sent events connection.
-   * The backend must explicitly support token query parameters.
+   * EventSource cannot attach a custom Authorization header.
+   * This requires the backend to explicitly support token query parameters.
+   * Avoid query-token authentication unless the endpoint requires it, because
+   * URLs may be recorded in logs and browser history.
    */
   createLiveStream(token: string): EventSource {
     return new EventSource(
@@ -1042,28 +842,17 @@ export const api = {
 
   getStaffCustomers(
     token: string,
-    params: {
-      search?: string;
-      status?: string;
-      kycStatus?: string;
-    } = {}
+    params: { search?: string; status?: string; kycStatus?: string } = {}
   ) {
     const q = new URLSearchParams();
-
     if (params.search) q.set("search", params.search);
+    if (params.status && params.status !== "all") q.set("status", params.status);
+    if (params.kycStatus && params.kycStatus !== "all") q.set("kycStatus", params.kycStatus);
 
-    if (params.status && params.status !== "all") {
-      q.set("status", params.status);
-    }
-
-    if (params.kycStatus && params.kycStatus !== "all") {
-      q.set("kycStatus", params.kycStatus);
-    }
-
-    return request<{
-      success: boolean;
-      count: number;
-      customers: any[];
-    }>(`/staff/customers?${q.toString()}`, {}, token);
+    return request<{ success: boolean; count: number; customers: any[] }>(
+      `/staff/customers?${q.toString()}`,
+      {},
+      token
+    );
   },
 };

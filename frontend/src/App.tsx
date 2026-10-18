@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from "react";
 import {
   BrowserRouter,
@@ -27,7 +26,7 @@ import { StatementModal } from "./components/StatementModal";
 
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsAndConditions from "./pages/TermsAndConditions";
-
+import ActiveSessionsView from "./components/ActiveSessionsView";
 import {
   api,
   type Customer,
@@ -733,6 +732,10 @@ const handleDirectDemoLogin = async (
                   onShowReceipt={setActiveReceipt}
                   onOpenStatement={() => setShowStatementModal(true)}
                 />
+              )}
+
+              {activePage === "sessions" && (
+                <ActiveSessionsView token={token} onToast={showToast} />
               )}
 
               {activePage === "profile" && (

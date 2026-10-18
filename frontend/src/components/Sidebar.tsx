@@ -1,3 +1,4 @@
+
 import React from "react";
 import {
   Home,
@@ -14,6 +15,7 @@ import {
   ShieldAlert,
   Activity,
   X,
+  Monitor,
 } from "lucide-react";
 import type { Customer } from "../services/api";
 
@@ -66,6 +68,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       { id: "loans", label: "Loans & Credit Line", icon: CreditCard },
       { id: "fixed-deposits", label: "Fixed Term Deposits", icon: Award },
       { id: "transactions", label: "Ledger & Statements", icon: FileText },
+      { id: "sessions", label: "Active Sessions", icon: Monitor },
       { id: "profile", label: "Profile & Security", icon: Settings },
     ];
   };
@@ -76,36 +79,54 @@ export const Sidebar: React.FC<SidebarProps> = ({
     <aside className={`sidebar ${isOpen ? "open" : ""}`}>
       {/* Mobile Header in Drawer */}
       <div className="sidebar-brand-mobile">
-        <div style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 700, fontSize: 18, color: "#fff" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            fontWeight: 700,
+            fontSize: 18,
+            color: "#fff",
+          }}
+        >
           <Landmark size={20} className="text-emerald" />
           <span>VaultBank</span>
         </div>
-        <button className="icon-btn" onClick={onCloseMobile}>
+
+        <button
+          type="button"
+          className="icon-btn"
+          onClick={onCloseMobile}
+          aria-label="Close navigation menu"
+        >
           <X size={18} />
         </button>
       </div>
 
-      <nav className="sidebar-nav">
+      <nav className="sidebar-nav" aria-label="Main navigation">
         <div className="nav-section-title">
           {customer.role === "admin"
             ? "Enterprise Governance"
             : customer.role === "staff"
-            ? "Branch Operations"
-            : "Core Banking"}
+              ? "Branch Operations"
+              : "Core Banking"}
         </div>
 
         {navItems.map((item) => {
           const isActive = activePage === item.id;
+
           return (
             <button
+              type="button"
               key={item.id}
               className={`nav-item ${isActive ? "active" : ""}`}
               onClick={() => {
                 onNavigate(item.id);
                 onCloseMobile();
               }}
+              aria-current={isActive ? "page" : undefined}
             >
-              <item.icon size={18} />
+              <item.icon size={18} aria-hidden="true" />
               <span>{item.label}</span>
             </button>
           );
@@ -113,11 +134,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </nav>
 
       <div className="sidebar-footer">
-        <button className="logout-btn" onClick={onLogout}>
-          <LogOut size={16} />
+        <button
+          type="button"
+          className="logout-btn"
+          onClick={onLogout}
+        >
+          <LogOut size={16} aria-hidden="true" />
           <span>Sign Out</span>
         </button>
       </div>
     </aside>
   );
 };
+
+export default Sidebar;
