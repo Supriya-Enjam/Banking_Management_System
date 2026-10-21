@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from "react";
 import {
   BrowserRouter,
@@ -23,10 +24,14 @@ import { StaffPortalView } from "./components/StaffPortalView";
 import { AdminDashboardView } from "./components/AdminDashboardView";
 import { ReceiptModal } from "./components/ReceiptModal";
 import { StatementModal } from "./components/StatementModal";
+import ActiveSessionsView from "./components/ActiveSessionsView";
 
+import CardsView from "./components/CardsView";
+import CreditCardApplicationView from "./components/CreditCardApplicationView";
+import CreditCardsView from "./components/CreditCardsView";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsAndConditions from "./pages/TermsAndConditions";
-import ActiveSessionsView from "./components/ActiveSessionsView";
+
 import {
   api,
   type Customer,
@@ -39,6 +44,10 @@ import {
 } from "./services/api";
 
 import "./App.css";
+
+// --------------------------------------------------
+// Types
+// --------------------------------------------------
 
 type ViewMode = "landing" | "auth" | "app";
 type DepositMode = "deposit" | "withdraw";
@@ -56,25 +65,6 @@ type AdminInitialTab =
   | "customers"
   | "audit"
   | "reports";
-
-// --------------------------------------------------
-// Legal pages: available without logging in
-// --------------------------------------------------
-
-function LegalPages() {
-  return (
-    <Routes>
-      <Route
-        path="/privacy-policy"
-        element={<PrivacyPolicy />}
-      />
-      <Route
-        path="/terms-and-conditions"
-        element={<TermsAndConditions />}
-      />
-    </Routes>
-  );
-}
 
 // --------------------------------------------------
 // Main banking application
@@ -111,11 +101,13 @@ function BankingApp() {
   const [authIsRegister, setAuthIsRegister] = useState(false);
 
   // --------------------------------------------------
-  // Theme handling
+  // Theme
   // --------------------------------------------------
 
   const [theme, setTheme] = useState<Theme>(() =>
-    localStorage.getItem("vb_theme") === "dark" ? "dark" : "light"
+    localStorage.getItem("vb_theme") === "dark"
+      ? "dark"
+      : "light"
   );
 
   useEffect(() => {
@@ -214,7 +206,9 @@ function BankingApp() {
     if (!token) return;
 
     try {
-      const profileResponse = await api.getMe(token).catch(() => null);
+      const profileResponse = await api
+        .getMe(token)
+        .catch(() => null);
 
       const currentCustomer: Customer | null =
         profileResponse?.customer ?? customer;
@@ -233,7 +227,10 @@ function BankingApp() {
         .catch(() => null);
 
       if (notificationResponse) {
-        setNotifications(notificationResponse.notifications || []);
+        setNotifications(
+          notificationResponse.notifications || []
+        );
+
         setUnreadNotificationsCount(
           notificationResponse.unreadCount || 0
         );
@@ -251,32 +248,48 @@ function BankingApp() {
           fixedDepositsResponse,
         ] = await Promise.all([
           api.getAccounts(token),
-          api.getTransactions(token, { page: 1, limit: 100 }),
+          api.getTransactions(token, {
+            page: 1,
+            limit: 100,
+          }),
           api.getBeneficiaries(token),
           api.getMyLoans(token),
           api.getFixedDeposits(token),
         ]);
 
         setAccounts(accountsResponse.accounts || []);
-        setTransactions(transactionsResponse.transactions || []);
-        setBeneficiaries(beneficiariesResponse.beneficiaries || []);
+
+        setTransactions(
+          transactionsResponse.transactions || []
+        );
+
+        setBeneficiaries(
+          beneficiariesResponse.beneficiaries || []
+        );
+
         setLoans(loansResponse.loans || []);
-        setFixedDeposits(fixedDepositsResponse.fixedDeposits || []);
+
+        setFixedDeposits(
+          fixedDepositsResponse.fixedDeposits || []
+        );
 
         return;
       }
 
       // STAFF / ADMIN: management transaction ledger.
-      const [accountsResult, ledgerResult] = await Promise.allSettled([
-        api.getAccounts(token),
-        api.getAllTransactions(token, {
-          page: 1,
-          limit: 100,
-        }),
-      ]);
+      const [accountsResult, ledgerResult] =
+        await Promise.allSettled([
+          api.getAccounts(token),
+          api.getAllTransactions(token, {
+            page: 1,
+            limit: 100,
+          }),
+        ]);
 
       if (accountsResult.status === "fulfilled") {
-        setAccounts(accountsResult.value.accounts || []);
+        setAccounts(
+          accountsResult.value.accounts || []
+        );
       } else {
         setAccounts([]);
 
@@ -287,7 +300,9 @@ function BankingApp() {
       }
 
       if (ledgerResult.status === "fulfilled") {
-        setTransactions(ledgerResult.value.transactions || []);
+        setTransactions(
+          ledgerResult.value.transactions || []
+        );
       } else {
         setTransactions([]);
 
@@ -304,15 +319,27 @@ function BankingApp() {
       setBeneficiaries([]);
       setLoans([]);
       setFixedDeposits([]);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Unable to load banking data:", error);
-      showToast("Unable to load banking data. Please try again.");
+
+      showToast(
+        error instanceof Error
+          ? error.message
+          : "Unable to load banking data. Please try again."
+      );
+
+      throw error;
     }
   }, [token, customer, showToast]);
 
+  // Load data after login and whenever the authenticated
+  // user's relevant state changes.
   useEffect(() => {
     if (token) {
-      void loadUserData();
+      void loadUserData().catch(() => {
+        // The error is logged and a toast is displayed
+        // by loadUserData.
+      });
     }
   }, [token, loadUserData]);
 
@@ -328,6 +355,7 @@ function BankingApp() {
     setCustomer(newCustomer);
 
     localStorage.setItem("vb_token", newToken);
+
     localStorage.setItem(
       "vb_customer",
       JSON.stringify(newCustomer)
@@ -345,7 +373,7 @@ function BankingApp() {
 
     setMobileMenuOpen(false);
 
-    // Clear previous-session data while loading the new session.
+    // Clear previous-session data while the new session loads.
     setAccounts([]);
     setTransactions([]);
     setBeneficiaries([]);
@@ -386,90 +414,90 @@ function BankingApp() {
   // --------------------------------------------------
   // Demo role switcher
   // --------------------------------------------------
-const handleQuickRoleSwitch = async (
-  role: "customer" | "staff" | "admin"
-) => {
-  const credentials: Record<
-    "customer" | "staff" | "admin",
-    { email: string; pass: string }
-  > = {
-    customer: {
-      email: "demo.customer@example.com",
-      pass: "Demo@12345",
-    },
-    staff: {
-      email: "staff@vaultbank.com",
-      pass: "Staff@12345",
-    },
-    admin: {
-      email: "admin@vaultbank.com",
-      pass: "Admin@12345",
-    },
+
+  const handleQuickRoleSwitch = async (
+    role: "customer" | "staff" | "admin"
+  ) => {
+    const credentials: Record<
+      "customer" | "staff" | "admin",
+      { email: string; pass: string }
+    > = {
+      customer: {
+        email: "demo.customer@example.com",
+        pass: "Demo@12345",
+      },
+      staff: {
+        email: "staff@vaultbank.com",
+        pass: "Staff@12345",
+      },
+      admin: {
+        email: "admin@vaultbank.com",
+        pass: "Admin@12345",
+      },
+    };
+
+    try {
+      const response = await api.login(
+        credentials[role].email,
+        credentials[role].pass
+      );
+
+      if (!("token" in response) || !("customer" in response)) {
+        setAuthIsRegister(false);
+        setViewMode("auth");
+
+        showToast(
+          "OTP verification is required. Please sign in and verify your OTP."
+        );
+
+        return;
+      }
+
+      handleLoginSuccess(response.token, response.customer);
+
+      showToast(
+        `Switched persona to ${response.customer.name} (${response.customer.role}).`
+      );
+    } catch (error: unknown) {
+      showToast(
+        error instanceof Error
+          ? error.message
+          : "Failed to switch role persona."
+      );
+    }
   };
 
-  try {
-    const response = await api.login(
-      credentials[role].email,
-      credentials[role].pass
-    );
+  const handleDirectDemoLogin = async (
+    email: string,
+    password: string
+  ) => {
+    try {
+      const response = await api.login(email, password);
 
-    // Check that login returned a completed authentication response.
-    if (!("token" in response) || !("customer" in response)) {
-      setAuthIsRegister(false);
-      setViewMode("auth");
+      if (!("token" in response) || !("customer" in response)) {
+        setAuthIsRegister(false);
+        setViewMode("auth");
 
-      showToast(
-        "OTP verification is required. Please sign in and verify your OTP."
-      );
-      return;
-    }
+        showToast(
+          "OTP verification is required. Please sign in and verify your OTP."
+        );
 
-    handleLoginSuccess(response.token, response.customer);
+        return;
+      }
 
-    showToast(
-      `Switched persona to ${response.customer.name} (${response.customer.role}).`
-    );
-  } catch (error: unknown) {
-    showToast(
-      error instanceof Error
-        ? error.message
-        : "Failed to switch role persona."
-    );
-  }
-};
-
-const handleDirectDemoLogin = async (
-  email: string,
-  password: string
-) => {
-  try {
-    const response = await api.login(email, password);
-
-    // An OTP challenge does not contain a token or customer.
-    if (!("token" in response) || !("customer" in response)) {
-      setAuthIsRegister(false);
-      setViewMode("auth");
+      handleLoginSuccess(response.token, response.customer);
 
       showToast(
-        "OTP verification is required. Please sign in and verify your OTP."
+        `Welcome, ${response.customer.name} (${response.customer.role}).`
       );
-      return;
+    } catch (error: unknown) {
+      showToast(
+        error instanceof Error
+          ? error.message
+          : "Failed to sign in demo persona."
+      );
     }
-
-    handleLoginSuccess(response.token, response.customer);
-
-    showToast(
-      `Welcome, ${response.customer.name} (${response.customer.role}).`
-    );
-  } catch (error: unknown) {
-    showToast(
-      error instanceof Error
-        ? error.message
-        : "Failed to sign in demo persona."
-    );
-  }
-};
-
+  };
 
   // --------------------------------------------------
   // Notification handlers
@@ -491,10 +519,15 @@ const handleDirectDemoLogin = async (
       );
 
       showToast("All notifications marked as read.");
-    } catch (error) {
-      console.error("Failed to mark notifications as read:", error);
+    } catch (error: unknown) {
+      console.error(
+        "Failed to mark notifications as read:",
+        error
+      );
 
-      showToast("Could not update notifications. Please try again.");
+      showToast(
+        "Could not update notifications. Please try again."
+      );
     }
   };
 
@@ -531,12 +564,16 @@ const handleDirectDemoLogin = async (
     switch (activePage) {
       case "kyc":
         return "kyc";
+
       case "loans":
         return "loans";
+
       case "accounts":
         return "accounts";
+
       case "teller":
         return "teller";
+
       case "overview":
       default:
         return "live";
@@ -551,10 +588,13 @@ const handleDirectDemoLogin = async (
     switch (activePage) {
       case "customers":
         return "customers";
+
       case "audit":
         return "audit";
+
       case "reports":
         return "reports";
+
       case "overview":
       default:
         return "overview";
@@ -663,7 +703,9 @@ const handleDirectDemoLogin = async (
                   onOpenDeposit={handleOpenDeposit}
                   onOpenWithdraw={handleOpenWithdraw}
                   onOpenTransfer={handleOpenTransfer}
-                  onOpenStatement={() => setShowStatementModal(true)}
+                  onOpenStatement={() =>
+                    setShowStatementModal(true)
+                  }
                   onShowReceipt={setActiveReceipt}
                   onToast={showToast}
                 />
@@ -681,6 +723,30 @@ const handleDirectDemoLogin = async (
                 />
               )}
 
+              {/* DEBIT CARDS */}
+              {activePage === "cards" && (
+                <CardsView
+                  token={token}
+                  accounts={accounts}
+                  onRefreshData={loadUserData}
+                  onToast={showToast}
+                />
+              )}
+        {/* CREDIT CARDS */}
+        {activePage === "credit-cards" && (
+        <CreditCardsView
+          token={token}
+          onToast={showToast}
+          />
+        )}
+
+        {/* CREDIT CARD APPLICATION */}
+        {activePage === "credit-card-application" && (
+        <CreditCardApplicationView
+        token={token}
+        onToast={showToast}
+        />
+        )}
               {activePage === "transfer" && (
                 <TransferView
                   token={token}
@@ -730,12 +796,18 @@ const handleDirectDemoLogin = async (
                   accounts={accounts}
                   transactions={transactions}
                   onShowReceipt={setActiveReceipt}
-                  onOpenStatement={() => setShowStatementModal(true)}
+                  onOpenStatement={() =>
+                    setShowStatementModal(true)
+                  }
+                  onRefreshData={loadUserData}
                 />
               )}
 
               {activePage === "sessions" && (
-                <ActiveSessionsView token={token} onToast={showToast} />
+                <ActiveSessionsView
+                  token={token}
+                  onToast={showToast}
+                />
               )}
 
               {activePage === "profile" && (
@@ -773,7 +845,10 @@ const handleDirectDemoLogin = async (
                   accounts={accounts}
                   transactions={transactions}
                   onShowReceipt={setActiveReceipt}
-                  onOpenStatement={() => setShowStatementModal(true)}
+                  onOpenStatement={() =>
+                    setShowStatementModal(true)
+                  }
+                  onRefreshData={loadUserData}
                 />
               )}
 
@@ -810,7 +885,10 @@ const handleDirectDemoLogin = async (
                   accounts={accounts}
                   transactions={transactions}
                   onShowReceipt={setActiveReceipt}
-                  onOpenStatement={() => setShowStatementModal(true)}
+                  onOpenStatement={() =>
+                    setShowStatementModal(true)
+                  }
+                  onRefreshData={loadUserData}
                 />
               )}
 

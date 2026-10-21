@@ -32,7 +32,11 @@ import {
   Clock,
 } from "lucide-react";
 
-import { api, type StaffMetrics } from "../services/api";
+import {
+  api,
+  type StaffMetrics,
+  type CreditCardApplication,
+} from "../services/api";
 
 type StaffTab =
   | "live"
@@ -40,7 +44,8 @@ type StaffTab =
   | "kyc"
   | "loans"
   | "accounts"
-  | "customers";
+  | "customers"
+  | "credit-cards";
 
 interface StaffPortalViewProps {
   token: string;
@@ -103,6 +108,15 @@ function formatAmount(amount?: number): string {
   if (amount == null || !Number.isFinite(amount)) {
     return "";
   }
+
+  return `₹${amount.toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function formatRupeesFromPaise(amountPaise?: number): string {
+  const amount = Number(amountPaise ?? 0) / 100;
 
   return `₹${amount.toLocaleString("en-IN", {
     minimumFractionDigits: 2,
@@ -307,19 +321,26 @@ export const StaffPortalView: React.FC<StaffPortalViewProps> = ({
     {}
   );
 
+  // Credit card application review
+  const [creditCardApplications, setCreditCardApplications] = useState<
+    CreditCardApplication[]
+  >([]);
+  const [loadingCreditCards, setLoadingCreditCards] = useState(false);
+  const [reviewingCardId, setReviewingCardId] = useState<string | null>(
+    null
+  );
+
   // Live activity
   const [liveEvents, setLiveEvents] = useState<LiveEvent[]>([]);
-  const [newEventIds, setNewEventIds] = useState<Set<string>>(
-    new Set()
-  );
+  const [newEventIds, setNewEventIds] = useState<Set<string>>(new Set());
   const [sseConnected, setSseConnected] = useState(false);
   const [liveLoading, setLiveLoading] = useState(false);
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const feedRef = useRef<HTMLDivElement>(null);
-  const eventTimersRef = useRef<
-    ReturnType<typeof window.setTimeout>[]
-  >([]);
+  const eventTimersRef = useRef<ReturnType<typeof window.setTimeout>[]>(
+    []
+  );
 
   // Keep the selected tab synchronized with the parent sidebar.
   useEffect(() => {
@@ -376,6 +397,35 @@ export const StaffPortalView: React.FC<StaffPortalViewProps> = ({
     }
   }, [token, onToast]);
 
+  // Load credit card applications from the backend.
+  const loadCreditCardApplications = useCallback(async () => {
+    if (!token) return;
+
+    setLoadingCreditCards(true);
+
+    try {
+      const response = await api.getCreditCardApplications(token);
+      setCreditCardApplications(response.applications ?? []);
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to load credit card applications.";
+
+      console.error("Failed to load credit card applications:", error);
+      onToast(message);
+    } finally {
+      setLoadingCreditCards(false);
+    }
+  }, [token, onToast]);
+
+  // Load applications whenever the Credit Cards tab becomes active.
+  useEffect(() => {
+    if (activeTab === "credit-cards") {
+      void loadCreditCardApplications();
+    }
+  }, [activeTab, loadCreditCardApplications]);
+
   // Open the live activity stream. Any previous stream is closed first.
   const connectSSE = useCallback(() => {
     if (!token) return;
@@ -393,7 +443,6 @@ export const StaffPortalView: React.FC<StaffPortalViewProps> = ({
 
       eventSource.onerror = () => {
         setSseConnected(false);
-        // EventSource may attempt to reconnect automatically.
       };
 
       eventSource.onmessage = (messageEvent: MessageEvent) => {
@@ -438,7 +487,6 @@ export const StaffPortalView: React.FC<StaffPortalViewProps> = ({
             behavior: "smooth",
           });
 
-          // Refresh metrics after an activity arrives.
           void api
             .getStaffMetrics(token)
             .then((response) => setMetrics(response.metrics))
@@ -446,10 +494,7 @@ export const StaffPortalView: React.FC<StaffPortalViewProps> = ({
               // A later refresh can recover the metrics.
             });
         } catch (error: unknown) {
-          console.error(
-            "Unable to process live activity event:",
-            error
-          );
+          console.error("Unable to process live activity event:", error);
         }
       };
     } catch (error: unknown) {
@@ -470,7 +515,6 @@ export const StaffPortalView: React.FC<StaffPortalViewProps> = ({
     connectSSE();
 
     return () => {
-      // Always close the latest stream, including manually reconnected streams.
       eventSourceRef.current?.close();
       eventSourceRef.current = null;
 
@@ -535,9 +579,7 @@ export const StaffPortalView: React.FC<StaffPortalViewProps> = ({
       }
     } catch (error: unknown) {
       setTellerError(
-        error instanceof Error
-          ? error.message
-          : "Teller deposit failed."
+        error instanceof Error ? error.message : "Teller deposit failed."
       );
     } finally {
       setTellerLoading(false);
@@ -636,10 +678,69 @@ export const StaffPortalView: React.FC<StaffPortalViewProps> = ({
       await loadStaffData();
     } catch (error: unknown) {
       onToast(
+        error instanceof Error ? error.message : "Failed to review loan."
+      );
+    }
+  };
+
+  // Approve or reject a credit card application.
+  const handleReviewCreditCard = async (
+    application: CreditCardApplication,
+    decision: "approve" | "reject"
+  ) => {
+    if (application.status !== "pending") {
+      onToast("This application has already been reviewed.");
+      return;
+    }
+
+    const notes =
+      decision === "reject"
+        ? window.prompt("Enter a reason for rejecting this application:")?.trim()
+        : "";
+
+    if (decision === "reject" && !notes) {
+      onToast("Please provide a reason before rejecting the application.");
+      return;
+    }
+
+    const actionLabel = decision === "approve" ? "approve" : "reject";
+
+    const confirmed = window.confirm(
+      `Are you sure you want to ${actionLabel} the credit card application for ${application.cardNumberMasked}?`
+    );
+
+    if (!confirmed) return;
+
+    setReviewingCardId(application.id);
+
+    try {
+      const approvedLimitRupees =
+        decision === "approve"
+          ? application.requestedLimitPaise / 100
+          : undefined;
+
+      await api.reviewCreditCardApplication(
+        token,
+        application.id,
+        decision,
+        approvedLimitRupees
+      );
+
+      onToast(
+        decision === "approve"
+          ? "Credit card application approved successfully."
+          : "Credit card application rejected successfully."
+      );
+
+      await loadCreditCardApplications();
+    } catch (error: unknown) {
+      onToast(
         error instanceof Error
           ? error.message
-          : "Failed to review loan."
+          : "Failed to review credit card application."
       );
+    } finally {
+      setReviewingCardId(null);
     }
   };
 
@@ -655,11 +756,7 @@ export const StaffPortalView: React.FC<StaffPortalViewProps> = ({
     if (!confirmed) return;
 
     try {
-      await api.updateAccountStatus(
-        token,
-        account.id,
-        nextStatus
-      );
+      await api.updateAccountStatus(token, account.id, nextStatus);
 
       onToast(
         `Account ${account.accountNumber} is now ${nextStatus}.`
@@ -683,6 +780,10 @@ export const StaffPortalView: React.FC<StaffPortalViewProps> = ({
     (loan) => loan.status === "pending"
   ).length;
 
+  const pendingCreditCardsCount = creditCardApplications.filter(
+    (application) => application.status === "pending"
+  ).length;
+
   const handleTabChange = (tab: StaffTab) => {
     setActiveTab(tab);
   };
@@ -691,14 +792,8 @@ export const StaffPortalView: React.FC<StaffPortalViewProps> = ({
     <div className="staff-portal">
       <style>{`
         @keyframes slideInEvent {
-          from {
-            opacity: 0;
-            transform: translateY(-12px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
+          from { opacity: 0; transform: translateY(-12px); }
+          to { opacity: 1; transform: translateY(0); }
         }
 
         @keyframes pulse-dot {
@@ -734,6 +829,36 @@ export const StaffPortalView: React.FC<StaffPortalViewProps> = ({
           outline-offset: 3px;
         }
 
+        .staff-review-actions {
+          display: flex;
+          gap: 6px;
+          justify-content: flex-end;
+          flex-wrap: wrap;
+        }
+
+        .staff-card-summary {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 18px;
+          padding: 16px;
+          border: 1px solid var(--border-subtle);
+          border-radius: 12px;
+          background: var(--surface-1);
+        }
+
+        .staff-card-summary-icon {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 44px;
+          height: 44px;
+          border-radius: 12px;
+          background: rgba(59,130,246,0.1);
+          color: var(--sapphire);
+          flex-shrink: 0;
+        }
+
         @media (max-width: 900px) {
           .staff-live-layout,
           .staff-two-column-layout {
@@ -749,6 +874,10 @@ export const StaffPortalView: React.FC<StaffPortalViewProps> = ({
           .staff-tab-button {
             flex: 1 1 calc(50% - 8px);
           }
+
+          .staff-review-actions {
+            justify-content: flex-start;
+          }
         }
       `}</style>
 
@@ -758,7 +887,7 @@ export const StaffPortalView: React.FC<StaffPortalViewProps> = ({
           <h1 className="page-title">Staff Operations Centre</h1>
           <p className="page-subtitle">
             Real-time customer activity, branch teller desk, KYC
-            verifications and loan approvals
+            verifications, loan approvals and credit card reviews
           </p>
         </div>
 
@@ -768,12 +897,18 @@ export const StaffPortalView: React.FC<StaffPortalViewProps> = ({
           onClick={() => {
             void loadStaffData();
             void loadLiveActivity();
+
+            if (activeTab === "credit-cards") {
+              void loadCreditCardApplications();
+            }
           }}
-          disabled={loading || liveLoading}
+          disabled={loading || liveLoading || loadingCreditCards}
         >
           <RefreshCw
             size={16}
-            className={loading || liveLoading ? "spin" : ""}
+            className={
+              loading || liveLoading || loadingCreditCards ? "spin" : ""
+            }
           />
           Refresh
         </button>
@@ -796,16 +931,10 @@ export const StaffPortalView: React.FC<StaffPortalViewProps> = ({
                 background: sseConnected
                   ? "rgba(16,185,129,0.1)"
                   : "rgba(239,68,68,0.1)",
-                color: sseConnected
-                  ? "var(--emerald)"
-                  : "var(--rose)",
+                color: sseConnected ? "var(--emerald)" : "var(--rose)",
               }}
             >
-              {sseConnected ? (
-                <Wifi size={20} />
-              ) : (
-                <WifiOff size={20} />
-              )}
+              {sseConnected ? <Wifi size={20} /> : <WifiOff size={20} />}
             </div>
           </div>
 
@@ -824,9 +953,7 @@ export const StaffPortalView: React.FC<StaffPortalViewProps> = ({
               style={{
                 fontWeight: 700,
                 fontSize: 15,
-                color: sseConnected
-                  ? "var(--emerald)"
-                  : "var(--rose)",
+                color: sseConnected ? "var(--emerald)" : "var(--rose)",
               }}
             >
               {sseConnected ? "Connected" : "Offline"}
@@ -856,8 +983,8 @@ export const StaffPortalView: React.FC<StaffPortalViewProps> = ({
           </div>
           <div className="stat-footer">
             ₹
-            {(metrics?.todayVolumeRupees ?? 0).toLocaleString("en-IN")}
-            {" "}total volume
+            {(metrics?.todayVolumeRupees ?? 0).toLocaleString("en-IN")} total
+            volume
           </div>
         </div>
 
@@ -949,6 +1076,7 @@ export const StaffPortalView: React.FC<StaffPortalViewProps> = ({
               label: `Loans (${pendingLoansCount})`,
               icon: FileCheck,
             },
+            { id: "credit-cards", label: `Credit Cards (${pendingCreditCardsCount})`, icon: CreditCard },
             { id: "accounts", label: "Accounts", icon: Landmark },
             { id: "customers", label: "Customers", icon: Users },
           ] as const
@@ -1541,9 +1669,7 @@ export const StaffPortalView: React.FC<StaffPortalViewProps> = ({
                         </div>
                       </td>
 
-                      <td style={{ fontWeight: 600 }}>
-                        {loan.loanType}
-                      </td>
+                      <td style={{ fontWeight: 600 }}>{loan.loanType}</td>
 
                       <td>
                         <div
@@ -1552,10 +1678,7 @@ export const StaffPortalView: React.FC<StaffPortalViewProps> = ({
                             color: "var(--text-main)",
                           }}
                         >
-                          ₹
-                          {Number(loan.amount || 0).toLocaleString(
-                            "en-IN"
-                          )}
+                          ₹{Number(loan.amount || 0).toLocaleString("en-IN")}
                         </div>
                         <div
                           style={{
@@ -1619,10 +1742,7 @@ export const StaffPortalView: React.FC<StaffPortalViewProps> = ({
                               [loan.id]: event.target.value,
                             }))
                           }
-                          style={{
-                            padding: "6px 10px",
-                            fontSize: 12,
-                          }}
+                          style={{ padding: "6px 10px", fontSize: 12 }}
                           disabled={loan.status !== "pending"}
                         />
                       </td>
@@ -1674,6 +1794,289 @@ export const StaffPortalView: React.FC<StaffPortalViewProps> = ({
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Credit card application review queue */}
+      {activeTab === "credit-cards" && (
+        <div className="card-panel" style={{ padding: 0 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+              padding: "18px 20px",
+              borderBottom: "1px solid var(--border-subtle)",
+            }}
+          >
+            <div>
+              <h2
+                style={{
+                  margin: 0,
+                  fontSize: 18,
+                  fontWeight: 700,
+                  color: "var(--text-main)",
+                }}
+              >
+                Credit Card Applications
+              </h2>
+              <p
+                style={{
+                  margin: "6px 0 0",
+                  fontSize: 13,
+                  color: "var(--text-muted)",
+                }}
+              >
+                Review customer applications and approve or reject requests.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => void loadCreditCardApplications()}
+              disabled={loadingCreditCards}
+            >
+              <RefreshCw
+                size={15}
+                className={loadingCreditCards ? "spin" : ""}
+              />
+              Refresh Applications
+            </button>
+          </div>
+
+          <div style={{ padding: 20 }}>
+            <div className="staff-card-summary">
+              <div className="staff-card-summary-icon">
+                <CreditCard size={22} />
+              </div>
+
+              <div>
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "var(--text-muted)",
+                    marginBottom: 4,
+                  }}
+                >
+                  Pending Applications
+                </div>
+                <div
+                  style={{
+                    fontSize: 24,
+                    fontWeight: 800,
+                    color: "var(--text-main)",
+                  }}
+                >
+                  {pendingCreditCardsCount}
+                </div>
+              </div>
+            </div>
+
+            {loadingCreditCards && creditCardApplications.length === 0 ? (
+              <div
+                style={{
+                  textAlign: "center",
+                  padding: 40,
+                  color: "var(--text-muted)",
+                }}
+              >
+                <RefreshCw
+                  size={24}
+                  className="spin"
+                  style={{ marginBottom: 10 }}
+                />
+                <div>Loading credit card applications...</div>
+              </div>
+            ) : creditCardApplications.length === 0 ? (
+              <div
+                style={{
+                  textAlign: "center",
+                  padding: "44px 20px",
+                  color: "var(--text-muted)",
+                }}
+              >
+                <CreditCard
+                  size={36}
+                  style={{
+                    opacity: 0.35,
+                    display: "block",
+                    margin: "0 auto 12px",
+                  }}
+                />
+                <h3
+                  style={{
+                    fontSize: 16,
+                    color: "var(--text-main)",
+                    margin: "0 0 8px",
+                  }}
+                >
+                  No credit card applications
+                </h3>
+                <p style={{ margin: 0, fontSize: 13 }}>
+                  Customer applications will appear here when submitted.
+                </p>
+              </div>
+            ) : (
+              <div className="table-responsive">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Card</th>
+                      <th>Customer ID</th>
+                      <th>Requested Limit</th>
+                      <th>Outstanding</th>
+                      <th>Applied On</th>
+                      <th>Status</th>
+                      <th style={{ textAlign: "right" }}>Decision</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {creditCardApplications.map((application) => {
+                      const isReviewing =
+                        reviewingCardId === application.id;
+                      const isPending = application.status === "pending";
+
+                      return (
+                        <tr key={application.id}>
+                          <td>
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: 34,
+                                  height: 26,
+                                  borderRadius: 5,
+                                  background:
+                                    "linear-gradient(135deg, #1e3a8a, #3b82f6)",
+                                  color: "#fff",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  flexShrink: 0,
+                                }}
+                              >
+                                <CreditCard size={15} />
+                              </div>
+                              <span
+                                style={{
+                                  fontWeight: 700,
+                                  fontFamily: "monospace",
+                                  color: "var(--text-main)",
+                                }}
+                              >
+                                {application.cardNumberMasked || "New application"}
+                              </span>
+                            </div>
+                          </td>
+
+                          <td
+                            style={{
+                              fontSize: 12,
+                              color: "var(--text-muted)",
+                              fontFamily: "monospace",
+                            }}
+                          >
+                            {application.customerId || "—"}
+                          </td>
+
+                          <td
+                            style={{
+                              fontWeight: 700,
+                              color: "var(--text-main)",
+                            }}
+                          >
+                            {formatRupeesFromPaise(
+                              application.requestedLimitPaise
+                            )}
+                          </td>
+
+                          <td>
+                            {formatRupeesFromPaise(
+                              application.outstandingBalancePaise
+                            )}
+                          </td>
+
+                          <td>
+                            {application.createdAt &&
+                            !Number.isNaN(
+                              new Date(application.createdAt).getTime()
+                            )
+                              ? new Date(
+                                  application.createdAt
+                                ).toLocaleDateString("en-IN")
+                              : "—"}
+                          </td>
+
+                          <td>
+                            <span
+                              className={`status-pill ${application.status}`}
+                            >
+                              {application.status}
+                            </span>
+                          </td>
+
+                          <td style={{ textAlign: "right" }}>
+                            {isPending ? (
+                              <div className="staff-review-actions">
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-primary"
+                                  disabled={isReviewing}
+                                  onClick={() =>
+                                    void handleReviewCreditCard(
+                                      application,
+                                      "approve"
+                                    )
+                                  }
+                                >
+                                  <CheckCircle size={13} />
+                                  {isReviewing ? "Processing..." : "Approve"}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-danger"
+                                  disabled={isReviewing}
+                                  onClick={() =>
+                                    void handleReviewCreditCard(
+                                      application,
+                                      "reject"
+                                    )
+                                  }
+                                >
+                                  <XCircle size={13} />
+                                  Reject
+                                </button>
+                              </div>
+                            ) : (
+                              <div
+                                style={{
+                                  fontSize: 12,
+                                  color: "var(--text-faint)",
+                                  textAlign: "right",
+                                }}
+                              >
+                                {application.reviewNotes || "Reviewed"}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1750,20 +2153,13 @@ export const StaffPortalView: React.FC<StaffPortalViewProps> = ({
                           color: "var(--text-main)",
                         }}
                       >
-                        ₹
-                        {(
-                          Number(account.balancePaise || 0) / 100
-                        ).toLocaleString("en-IN", {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
+                        {formatRupeesFromPaise(account.balancePaise)}
                       </td>
 
                       <td className="text-mono" style={{ fontSize: 12 }}>
-                        ₹
-                        {(
-                          Number(account.dailyLimitPaise ?? 5000000) / 100
-                        ).toLocaleString("en-IN")}
+                        {formatRupeesFromPaise(
+                          account.dailyLimitPaise ?? 5000000
+                        )}
                       </td>
 
                       <td>

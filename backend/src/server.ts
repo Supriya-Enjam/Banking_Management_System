@@ -13,6 +13,8 @@ import { fixedDepositRoutes } from "./routes/fixedDepositRoutes";
 import { notificationRoutes } from "./routes/notificationRoutes";
 import { adminRoutes } from "./routes/adminRoutes";
 import { staffRoutes } from "./routes/staffRoutes";
+import debitCardRoutes from "./routes/debitCardRoutes";
+import creditCardRoutes from "./routes/creditCardRoutes";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 5000;
@@ -35,6 +37,8 @@ app.use("/api/fixed-deposits", fixedDepositRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/staff", staffRoutes);
+app.use("/api/cards/debit", debitCardRoutes);
+app.use("/api/cards/credit", creditCardRoutes);
 
 app.get("/", (_req: Request, res: Response) => {
   res.json({

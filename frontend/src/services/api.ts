@@ -1,3 +1,4 @@
+
 const API_BASE_URL = "http://localhost:5000/api";
 
 // =========================================================
@@ -43,6 +44,7 @@ export interface BankTransaction {
   type:
     | "deposit"
     | "withdrawal"
+    | "atm_withdrawal"
     | "transfer"
     | "loan_disbursement"
     | "loan_repayment"
@@ -183,6 +185,142 @@ export interface ActiveSessionsResponse {
 }
 
 // =========================================================
+// CREDIT CARD TYPES
+// =========================================================
+
+export type CreditCardStatus =
+  | "pending"
+  | "active"
+  | "blocked"
+  | "rejected"
+  | "closed";
+
+export interface CreditCard {
+  id: string;
+  cardNumberMasked: string;
+  creditLimitPaise: number;
+  outstandingBalancePaise: number;
+  availableCreditPaise: number;
+  status: CreditCardStatus;
+  expiryMonth: number;
+  expiryYear: number;
+  billingDay: number;
+  paymentDueDate: string | null;
+  activatedAt: string | null;
+  blockedAt: string | null;
+  createdAt: string;
+}
+
+export type CreditCardTransactionType =
+  | "credit_card_purchase"
+  | "credit_card_repayment";
+
+export interface CreditCardTransaction {
+  id: string;
+  reference: string;
+  type: CreditCardTransactionType;
+  category: string;
+  amountPaise: number;
+  amountRupees: number;
+  description: string;
+  merchant: string;
+  status: "pending" | "completed" | "failed";
+  createdAt: string;
+}
+
+export interface CreditCardsResponse {
+  success: boolean;
+  count: number;
+  cards: CreditCard[];
+}
+
+export type CreditCardApplicationStatus =
+  | "pending"
+  | "active"
+  | "rejected";
+
+export interface CreditCardApplication {
+  id: string;
+  cardNumberMasked: string;
+  requestedLimitPaise: number;
+  outstandingBalancePaise?: number;
+  status: CreditCardApplicationStatus;
+  reviewNotes?: string;
+  customerId?: string;
+  createdAt: string;
+}
+
+export interface CreditCardApplicationResponse {
+  success: boolean;
+  message: string;
+  card: CreditCardApplication;
+}
+
+export interface CreditCardApplicationsResponse {
+  success: boolean;
+  count: number;
+  applications: CreditCardApplication[];
+}
+
+export interface CreditCardTransactionsResponse {
+  success: boolean;
+  card: {
+    id: string;
+    cardNumberMasked: string;
+  };
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+  count: number;
+  transactions: CreditCardTransaction[];
+}
+
+// =========================================================
+// DEBIT CARD TYPES
+// =========================================================
+
+export type DebitCardStatus =
+  | "pending"
+  | "active"
+  | "blocked"
+  | "expired";
+
+export interface DebitCard {
+  id: string;
+  accountId: string;
+  cardNumberMasked: string;
+  status: DebitCardStatus;
+  expiryMonth: number;
+  expiryYear: number;
+  atmDailyLimitPaise: number;
+  createdAt: string;
+  activatedAt: string | null;
+  blockedAt: string | null;
+}
+
+export interface DebitCardsResponse {
+  success: boolean;
+  count: number;
+  cards: DebitCard[];
+}
+
+export interface DebitCardRequestResponse {
+  success: boolean;
+  message?: string;
+  card: DebitCard;
+  cardNumber?: string;
+}
+
+export interface DebitCardActionResponse {
+  success: boolean;
+  message?: string;
+  card?: DebitCard;
+}
+
+// =========================================================
 // AUTHENTICATION RESPONSE TYPES
 // =========================================================
 
@@ -236,7 +374,9 @@ async function request<T>(
 
   if (!response.ok || data.success === false) {
     throw new Error(
-      data.message || `Request failed with status ${response.status}`
+      typeof data.message === "string"
+        ? data.message
+        : `Request failed with status ${response.status}`
     );
   }
 
@@ -323,7 +463,10 @@ export const api = {
   ) {
     return request<{ success: boolean; message: string; customer: Customer }>(
       "/auth/profile",
-      { method: "PUT", body: JSON.stringify(data) },
+      {
+        method: "PUT",
+        body: JSON.stringify(data),
+      },
       token
     );
   },
@@ -334,7 +477,10 @@ export const api = {
   ) {
     return request<{ success: boolean; message: string }>(
       "/auth/change-password",
-      { method: "PUT", body: JSON.stringify(data) },
+      {
+        method: "PUT",
+        body: JSON.stringify(data),
+      },
       token
     );
   },
@@ -360,15 +506,19 @@ export const api = {
   // -------------------------------------------------------
 
   getAccounts(token: string) {
-    return request<{ success: boolean; count: number; accounts: BankAccount[] }>(
-      "/accounts",
-      {},
-      token
-    );
+    return request<{
+      success: boolean;
+      count: number;
+      accounts: BankAccount[];
+    }>("/accounts", {}, token);
   },
 
   createAccount(token: string, accountType: string, initialDeposit = 0) {
-    return request<{ success: boolean; message: string; account: BankAccount }>(
+    return request<{
+      success: boolean;
+      message: string;
+      account: BankAccount;
+    }>(
       "/accounts",
       {
         method: "POST",
@@ -379,11 +529,11 @@ export const api = {
   },
 
   getAllAccounts(token: string) {
-    return request<{ success: boolean; count: number; accounts: BankAccount[] }>(
-      "/accounts/all",
-      {},
-      token
-    );
+    return request<{
+      success: boolean;
+      count: number;
+      accounts: BankAccount[];
+    }>("/accounts/all", {}, token);
   },
 
   updateAccountStatus(
@@ -403,6 +553,234 @@ export const api = {
   },
 
   // -------------------------------------------------------
+  // DEBIT CARDS
+  // -------------------------------------------------------
+
+  getDebitCards(token: string) {
+    return request<DebitCardsResponse>("/cards/debit", {}, token);
+  },
+
+  requestDebitCard(token: string, accountId: string, pin: string) {
+    return request<DebitCardRequestResponse>(
+      "/cards/debit/request",
+      {
+        method: "POST",
+        body: JSON.stringify({ accountId, pin }),
+      },
+      token
+    );
+  },
+
+  activateDebitCard(
+    token: string,
+    cardId: string,
+    cardNumber: string,
+    pin: string
+  ) {
+    return request<DebitCardActionResponse>(
+      `/cards/debit/${encodeURIComponent(cardId)}/activate`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ cardNumber, pin }),
+      },
+      token
+    );
+  },
+
+  blockDebitCard(token: string, cardId: string) {
+    return request<DebitCardActionResponse>(
+      `/cards/debit/${encodeURIComponent(cardId)}/block`,
+      { method: "PATCH" },
+      token
+    );
+  },
+
+  cancelDebitCard(token: string, cardId: string) {
+    return request<DebitCardActionResponse>(
+      `/cards/debit/${encodeURIComponent(cardId)}/cancel`,
+      { method: "PATCH" },
+      token
+    );
+  },
+
+  // -------------------------------------------------------
+  // CREDIT CARDS
+  // -------------------------------------------------------
+
+  getCreditCards(token: string) {
+    return request<CreditCardsResponse>("/cards/credit", {}, token);
+  },
+
+  applyForCreditCard(
+    token: string,
+    requestedLimitRupees: number
+  ) {
+    return request<CreditCardApplicationResponse>(
+      "/cards/credit/apply",
+      {
+        method: "POST",
+        body: JSON.stringify({ requestedLimitRupees }),
+      },
+      token
+    );
+  },
+
+  
+  getCreditCardApplications(token: string) {
+    return request<CreditCardApplicationsResponse>(
+      "/cards/credit/applications",
+      {},
+      token
+    );
+  },
+
+  reviewCreditCardApplication(
+    token: string,
+    cardId: string,
+    decision: "approve" | "reject",
+    approvedLimitRupees?: number
+  ) {
+    return request<{
+      success: boolean;
+      message: string;
+      card: {
+        id: string;
+        status: CreditCardApplicationStatus;
+        cardNumberMasked?: string;
+        creditLimitPaise?: number;
+        outstandingBalancePaise?: number;
+        availableCreditPaise?: number;
+        expiryMonth?: number;
+        expiryYear?: number;
+        activatedAt?: string;
+      };
+    }>(
+      `/cards/credit/applications/${encodeURIComponent(cardId)}/review`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          decision,
+          ...(decision === "approve" && approvedLimitRupees !== undefined
+            ? { approvedLimitRupees }
+            : {}),
+        }),
+      },
+      token
+    );
+  },
+
+
+  getCreditCardTransactions(
+    token: string,
+    cardId: string,
+    params: {
+      page?: number;
+      limit?: number;
+      type?: "all" | "purchase" | "repayment";
+    } = {}
+  ) {
+    const q = new URLSearchParams();
+
+    if (params.page !== undefined) {
+      q.set("page", String(params.page));
+    }
+
+    if (params.limit !== undefined) {
+      q.set("limit", String(params.limit));
+    }
+
+    if (params.type && params.type !== "all") {
+      q.set("type", params.type);
+    }
+
+    const query = q.toString();
+
+    return request<CreditCardTransactionsResponse>(
+      `/cards/credit/${encodeURIComponent(cardId)}/transactions${
+        query ? `?${query}` : ""
+      }`,
+      {},
+      token
+    );
+  },
+
+  blockCreditCard(token: string, cardId: string) {
+    return request<{
+      success: boolean;
+      message: string;
+      card: {
+        id: string;
+        cardNumberMasked: string;
+        status: CreditCardStatus;
+        blockedAt: string | null;
+      };
+    }>(
+      `/cards/credit/${encodeURIComponent(cardId)}/block`,
+      { method: "PATCH" },
+      token
+    );
+  },
+
+  
+  purchaseCreditCard(
+    token: string,
+    cardId: string,
+    data: {
+      amount: number;
+      merchant?: string;
+      description?: string;
+    }
+  ) {
+    return request<{
+      success: boolean;
+      message: string;
+      transaction: {
+        transactionId: string;
+        reference: string;
+        amountPaise: number;
+        remainingOutstandingPaise: number;
+        availableCreditPaise: number;
+      };
+    }>(
+      `/cards/credit/${encodeURIComponent(cardId)}/purchase`,
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      },
+      token
+    );
+  },
+
+  repayCreditCard(
+    token: string,
+    cardId: string,
+    data: {
+      accountId: string;
+      amount: number;
+    }
+  ) {
+    return request<{
+      success: boolean;
+      message: string;
+      transaction: {
+        transactionId: string;
+        reference: string;
+        amountPaise: number;
+        remainingOutstandingPaise: number;
+        bankBalancePaise: number;
+      };
+    }>(
+      `/cards/credit/${encodeURIComponent(cardId)}/repay`,
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      },
+      token
+    );
+  },
+
+
+  // -------------------------------------------------------
   // TRANSACTIONS
   // -------------------------------------------------------
 
@@ -419,9 +797,12 @@ export const api = {
     } = {}
   ) {
     const q = new URLSearchParams();
+
     if (params.page) q.set("page", String(params.page));
     if (params.limit) q.set("limit", String(params.limit));
-    if (params.type && params.type !== "all") q.set("type", params.type);
+    if (params.type && params.type !== "all") {
+      q.set("type", params.type);
+    }
     if (params.search) q.set("search", params.search);
     if (params.startDate) q.set("startDate", params.startDate);
     if (params.endDate) q.set("endDate", params.endDate);
@@ -430,7 +811,12 @@ export const api = {
     return request<{
       success: boolean;
       count: number;
-      pagination: { page: number; limit: number; total: number; totalPages: number };
+      pagination: {
+        page: number;
+        limit: number;
+        total: number;
+        totalPages: number;
+      };
       transactions: BankTransaction[];
     }>(`/transactions?${q.toString()}`, {}, token);
   },
@@ -452,7 +838,12 @@ export const api = {
     );
   },
 
-  withdraw(token: string, accountId: string, amount: number, description?: string) {
+  withdraw(
+    token: string,
+    accountId: string,
+    amount: number,
+    description?: string
+  ) {
     return request<{ success: boolean; message: string; transaction: any }>(
       "/transactions/withdraw",
       {
@@ -475,7 +866,10 @@ export const api = {
   ) {
     return request<{ success: boolean; message: string; transaction: any }>(
       "/transactions/transfer",
-      { method: "POST", body: JSON.stringify(data) },
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      },
       token
     );
   },
@@ -499,22 +893,36 @@ export const api = {
     } = {}
   ) {
     const q = new URLSearchParams();
+
     if (params.page) q.set("page", String(params.page));
     if (params.limit) q.set("limit", String(params.limit));
-    if (params.type && params.type !== "all") q.set("type", params.type);
-    if (params.status && params.status !== "all") q.set("status", params.status);
+    if (params.type && params.type !== "all") {
+      q.set("type", params.type);
+    }
+    if (params.status && params.status !== "all") {
+      q.set("status", params.status);
+    }
     if (params.search) q.set("search", params.search);
 
     return request<{
       success: boolean;
       count: number;
-      pagination: { page: number; limit: number; total: number; totalPages: number };
+      pagination: {
+        page: number;
+        limit: number;
+        total: number;
+        totalPages: number;
+      };
       transactions: BankTransaction[];
     }>(`/transactions/all?${q.toString()}`, {}, token);
   },
 
   getTransactionStats(token: string) {
-    return request<{ success: boolean; stats: any }>("/transactions/stats", {}, token);
+    return request<{ success: boolean; stats: any }>(
+      "/transactions/stats",
+      {},
+      token
+    );
   },
 
   // -------------------------------------------------------
@@ -522,11 +930,11 @@ export const api = {
   // -------------------------------------------------------
 
   getBeneficiaries(token: string) {
-    return request<{ success: boolean; count: number; beneficiaries: Beneficiary[] }>(
-      "/beneficiaries",
-      {},
-      token
-    );
+    return request<{
+      success: boolean;
+      count: number;
+      beneficiaries: Beneficiary[];
+    }>("/beneficiaries", {}, token);
   },
 
   lookupAccount(token: string, accountNumber: string) {
@@ -536,7 +944,11 @@ export const api = {
       isInternal: boolean;
       customerName?: string;
       accountType?: string;
-    }>(`/beneficiaries/lookup/${encodeURIComponent(accountNumber)}`, {}, token);
+    }>(
+      `/beneficiaries/lookup/${encodeURIComponent(accountNumber)}`,
+      {},
+      token
+    );
   },
 
   addBeneficiary(
@@ -550,9 +962,16 @@ export const api = {
       maxLimitRupees?: number;
     }
   ) {
-    return request<{ success: boolean; message: string; beneficiary: Beneficiary }>(
+    return request<{
+      success: boolean;
+      message: string;
+      beneficiary: Beneficiary;
+    }>(
       "/beneficiaries",
-      { method: "POST", body: JSON.stringify(data) },
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      },
       token
     );
   },
@@ -594,7 +1013,10 @@ export const api = {
   ) {
     return request<{ success: boolean; message: string; loan: any }>(
       "/loans/apply",
-      { method: "POST", body: JSON.stringify(data) },
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      },
       token
     );
   },
@@ -623,7 +1045,10 @@ export const api = {
   ) {
     return request<{ success: boolean; message: string; loan: any }>(
       `/loans/${encodeURIComponent(id)}/review`,
-      { method: "PATCH", body: JSON.stringify({ action, notes }) },
+      {
+        method: "PATCH",
+        body: JSON.stringify({ action, notes }),
+      },
       token
     );
   },
@@ -654,25 +1079,40 @@ export const api = {
 
   openFd(
     token: string,
-    data: { accountId: string; amountRupees: number; tenureMonths: number }
+    data: {
+      accountId: string;
+      amountRupees: number;
+      tenureMonths: number;
+    }
   ) {
-    return request<{ success: boolean; message: string; fixedDeposit: FixedDeposit }>(
+    return request<{
+      success: boolean;
+      message: string;
+      fixedDeposit: FixedDeposit;
+    }>(
       "/fixed-deposits/open",
-      { method: "POST", body: JSON.stringify(data) },
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      },
       token
     );
   },
 
   getFixedDeposits(token: string) {
-    return request<{ success: boolean; count: number; fixedDeposits: FixedDeposit[] }>(
-      "/fixed-deposits",
-      {},
-      token
-    );
+    return request<{
+      success: boolean;
+      count: number;
+      fixedDeposits: FixedDeposit[];
+    }>("/fixed-deposits", {}, token);
   },
 
   liquidateFd(token: string, id: string) {
-    return request<{ success: boolean; message: string; payoutAmountRupees: number }>(
+    return request<{
+      success: boolean;
+      message: string;
+      payoutAmountRupees: number;
+    }>(
       `/fixed-deposits/${encodeURIComponent(id)}/liquidate`,
       { method: "POST" },
       token
@@ -721,6 +1161,7 @@ export const api = {
 
   getAdminCustomers(token: string, search?: string) {
     const query = search ? `?search=${encodeURIComponent(search)}` : "";
+
     return request<{ success: boolean; count: number; customers: any[] }>(
       `/admin/customers${query}`,
       {},
@@ -740,7 +1181,10 @@ export const api = {
   ) {
     return request<{ success: boolean; message: string; customer: any }>(
       `/admin/customers/${encodeURIComponent(id)}`,
-      { method: "PATCH", body: JSON.stringify(data) },
+      {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      },
       token
     );
   },
@@ -750,8 +1194,13 @@ export const api = {
     params: { severity?: string; action?: string; limit?: number } = {}
   ) {
     const q = new URLSearchParams();
-    if (params.severity && params.severity !== "all") q.set("severity", params.severity);
-    if (params.action && params.action !== "all") q.set("action", params.action);
+
+    if (params.severity && params.severity !== "all") {
+      q.set("severity", params.severity);
+    }
+    if (params.action && params.action !== "all") {
+      q.set("action", params.action);
+    }
     if (params.limit) q.set("limit", String(params.limit));
 
     return request<{ success: boolean; count: number; logs: AuditLogItem[] }>(
@@ -762,7 +1211,11 @@ export const api = {
   },
 
   getAdminReports(token: string) {
-    return request<{ success: boolean; reports: any }>("/admin/reports", {}, token);
+    return request<{ success: boolean; reports: any }>(
+      "/admin/reports",
+      {},
+      token
+    );
   },
 
   // -------------------------------------------------------
@@ -793,29 +1246,46 @@ export const api = {
   ) {
     return request<{ success: boolean; message: string; customer: any }>(
       `/staff/kyc/${encodeURIComponent(id)}`,
-      { method: "PATCH", body: JSON.stringify({ status, remarks }) },
+      {
+        method: "PATCH",
+        body: JSON.stringify({ status, remarks }),
+      },
       token
     );
   },
 
   tellerDeposit(
     token: string,
-    data: { accountNumber: string; amountRupees: number; remarks?: string }
+    data: {
+      accountNumber: string;
+      amountRupees: number;
+      remarks?: string;
+    }
   ) {
     return request<{ success: boolean; message: string; transaction: any }>(
       "/staff/teller-deposit",
-      { method: "POST", body: JSON.stringify(data) },
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      },
       token
     );
   },
 
   tellerWithdraw(
     token: string,
-    data: { accountNumber: string; amountRupees: number; remarks?: string }
+    data: {
+      accountNumber: string;
+      amountRupees: number;
+      remarks?: string;
+    }
   ) {
     return request<{ success: boolean; message: string; transaction: any }>(
       "/staff/teller-withdraw",
-      { method: "POST", body: JSON.stringify(data) },
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      },
       token
     );
   },
@@ -830,9 +1300,9 @@ export const api = {
 
   /**
    * EventSource cannot attach a custom Authorization header.
-   * This requires the backend to explicitly support token query parameters.
-   * Avoid query-token authentication unless the endpoint requires it, because
-   * URLs may be recorded in logs and browser history.
+   * The backend must explicitly support token query parameters.
+   * Avoid query-token authentication unless the endpoint requires it,
+   * because URLs may be recorded in logs and browser history.
    */
   createLiveStream(token: string): EventSource {
     return new EventSource(
@@ -842,12 +1312,21 @@ export const api = {
 
   getStaffCustomers(
     token: string,
-    params: { search?: string; status?: string; kycStatus?: string } = {}
+    params: {
+      search?: string;
+      status?: string;
+      kycStatus?: string;
+    } = {}
   ) {
     const q = new URLSearchParams();
+
     if (params.search) q.set("search", params.search);
-    if (params.status && params.status !== "all") q.set("status", params.status);
-    if (params.kycStatus && params.kycStatus !== "all") q.set("kycStatus", params.kycStatus);
+    if (params.status && params.status !== "all") {
+      q.set("status", params.status);
+    }
+    if (params.kycStatus && params.kycStatus !== "all") {
+      q.set("kycStatus", params.kycStatus);
+    }
 
     return request<{ success: boolean; count: number; customers: any[] }>(
       `/staff/customers?${q.toString()}`,

@@ -17,6 +17,7 @@ import {
   X,
   Monitor,
 } from "lucide-react";
+
 import type { Customer } from "../services/api";
 
 interface SidebarProps {
@@ -37,47 +38,151 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onLogout,
 }) => {
   const getNavItems = () => {
+    // ADMIN NAVIGATION
     if (customer.role === "admin") {
       return [
-        { id: "overview", label: "Executive Telemetry", icon: Landmark },
-        { id: "customers", label: "Customer Accounts & Limits", icon: Users },
-        { id: "audit", label: "Security & Audit Trail", icon: ShieldAlert },
-        { id: "reports", label: "Financial Reports", icon: FileText },
-        { id: "transactions", label: "All Transactions", icon: Activity },
-        { id: "profile", label: "Profile & Settings", icon: Settings },
+        {
+          id: "overview",
+          label: "Executive Telemetry",
+          icon: Landmark,
+        },
+        {
+          id: "customers",
+          label: "Customer Accounts & Limits",
+          icon: Users,
+        },
+        {
+          id: "audit",
+          label: "Security & Audit Trail",
+          icon: ShieldAlert,
+        },
+        {
+          id: "reports",
+          label: "Financial Reports",
+          icon: FileText,
+        },
+        {
+          id: "transactions",
+          label: "All Transactions",
+          icon: Activity,
+        },
+        {
+          id: "profile",
+          label: "Profile & Settings",
+          icon: Settings,
+        },
       ];
     }
 
+    // STAFF NAVIGATION
     if (customer.role === "staff") {
       return [
-        { id: "teller", label: "Branch Cash Counter", icon: DollarSign },
-        { id: "kyc", label: "KYC Document Review", icon: Users },
-        { id: "loans", label: "Loan Review Queue", icon: CreditCard },
-        { id: "accounts", label: "Customer Directory", icon: Landmark },
-        { id: "transactions", label: "Transaction Stream", icon: Activity },
-        { id: "profile", label: "Profile & Settings", icon: Settings },
+        {
+          id: "teller",
+          label: "Branch Cash Counter",
+          icon: DollarSign,
+        },
+        {
+          id: "kyc",
+          label: "KYC Document Review",
+          icon: Users,
+        },
+        {
+          id: "loans",
+          label: "Loan Review Queue",
+          icon: CreditCard,
+        },
+        {
+          id: "accounts",
+          label: "Customer Directory",
+          icon: Landmark,
+        },
+        {
+          id: "transactions",
+          label: "Transaction Stream",
+          icon: Activity,
+        },
+        {
+          id: "profile",
+          label: "Profile & Settings",
+          icon: Settings,
+        },
       ];
     }
 
-    // Default: Customer
+    // CUSTOMER NAVIGATION
     return [
-      { id: "overview", label: "Dashboard Overview", icon: Home },
-      { id: "accounts", label: "My Bank Accounts", icon: Landmark },
-      { id: "transfer", label: "Send Money & Payees", icon: ArrowLeftRight },
-      { id: "deposits", label: "Deposits & Withdrawals", icon: ArrowDownLeft },
-      { id: "loans", label: "Loans & Credit Line", icon: CreditCard },
-      { id: "fixed-deposits", label: "Fixed Term Deposits", icon: Award },
-      { id: "transactions", label: "Ledger & Statements", icon: FileText },
-      { id: "sessions", label: "Active Sessions", icon: Monitor },
-      { id: "profile", label: "Profile & Security", icon: Settings },
+      {
+        id: "overview",
+        label: "Dashboard Overview",
+        icon: Home,
+      },
+      {
+        id: "accounts",
+        label: "My Bank Accounts",
+        icon: Landmark,
+      },
+      {
+        id: "cards",
+        label: "Debit Cards",
+        icon: CreditCard,
+      },
+      {
+        id: "transfer",
+        label: "Send Money & Payees",
+        icon: ArrowLeftRight,
+      },
+      {
+        id: "deposits",
+        label: "Deposits & Withdrawals",
+        icon: ArrowDownLeft,
+      },
+      {
+        id: "loans",
+        label: "Loans & Credit Line",
+        icon: CreditCard,
+      },
+      {
+        id: "fixed-deposits",
+        label: "Fixed Term Deposits",
+        icon: Award,
+      },
+      {
+        id: "transactions",
+        label: "Ledger & Statements",
+        icon: FileText,
+      },
+      {
+        id: "sessions",
+        label: "Active Sessions",
+        icon: Monitor,
+      },
+      {
+        id: "profile",
+        label: "Profile & Security",
+        icon: Settings,
+      },
+      {
+        id: "credit-cards",
+        label: "Credit Cards",
+        icon: CreditCard,
+      },
+
+      {
+        id: "credit-card-application",
+        label: "Credit Card Application",
+        icon: FileText,
+      },
     ];
   };
 
   const navItems = getNavItems();
 
   return (
-    <aside className={`sidebar ${isOpen ? "open" : ""}`}>
-      {/* Mobile Header in Drawer */}
+    <aside
+      className={`sidebar ${isOpen ? "open" : ""}`}
+    >
+      {/* Mobile Sidebar Header */}
       <div className="sidebar-brand-mobile">
         <div
           style={{
@@ -89,7 +194,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             color: "#fff",
           }}
         >
-          <Landmark size={20} className="text-emerald" />
+          <Landmark
+            size={20}
+            className="text-emerald"
+          />
           <span>VaultBank</span>
         </div>
 
@@ -103,7 +211,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </button>
       </div>
 
-      <nav className="sidebar-nav" aria-label="Main navigation">
+      {/* Navigation */}
+      <nav
+        className="sidebar-nav"
+        aria-label="Main navigation"
+      >
         <div className="nav-section-title">
           {customer.role === "admin"
             ? "Enterprise Governance"
@@ -114,32 +226,46 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {navItems.map((item) => {
           const isActive = activePage === item.id;
+          const Icon = item.icon;
 
           return (
             <button
               type="button"
               key={item.id}
-              className={`nav-item ${isActive ? "active" : ""}`}
+              className={`nav-item ${
+                isActive ? "active" : ""
+              }`}
               onClick={() => {
                 onNavigate(item.id);
                 onCloseMobile();
               }}
-              aria-current={isActive ? "page" : undefined}
+              aria-current={
+                isActive ? "page" : undefined
+              }
             >
-              <item.icon size={18} aria-hidden="true" />
+              <Icon
+                size={18}
+                aria-hidden="true"
+              />
+
               <span>{item.label}</span>
             </button>
           );
         })}
       </nav>
 
+      {/* Sidebar Footer */}
       <div className="sidebar-footer">
         <button
           type="button"
           className="logout-btn"
           onClick={onLogout}
         >
-          <LogOut size={16} aria-hidden="true" />
+          <LogOut
+            size={16}
+            aria-hidden="true"
+          />
+
           <span>Sign Out</span>
         </button>
       </div>

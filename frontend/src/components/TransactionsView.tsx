@@ -1,6 +1,5 @@
 
-
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   Search,
   FileText,
@@ -32,6 +31,7 @@ interface TransactionsViewProps {
   transactions: BankTransaction[];
   onShowReceipt: (receipt: any) => void;
   onOpenStatement: () => void;
+  onRefreshData: () => void | Promise<void>;
 }
 
 type TransactionFilter =
@@ -58,7 +58,9 @@ const TRANSACTION_TYPES: {
   { value: "fd_liquidation", label: "Fixed deposit liquidations" },
 ];
 
-const CREDIT_TYPES = [
+// These transaction types add money to the account.
+// Withdrawals, including ATM withdrawals, count as debits.
+const CREDIT_TYPES: string[] = [
   "deposit",
   "loan_disbursement",
   "fd_liquidation",
@@ -121,6 +123,7 @@ const normalizeAccountId = (value: unknown): string => {
 const getTransactionAmount = (
   tx: BankTransaction
 ): number => {
+  // Prefer the amount expressed in rupees when available.
   if (
     typeof tx.amount === "number" &&
     Number.isFinite(tx.amount)
@@ -128,6 +131,7 @@ const getTransactionAmount = (
     return Math.abs(tx.amount);
   }
 
+  // Fall back to paise and convert to rupees.
   if (
     typeof tx.amountPaise === "number" &&
     Number.isFinite(tx.amountPaise)
@@ -142,6 +146,21 @@ const formatLabel = (value: string): string =>
   value
     .replace(/_/g, " ")
     .replace(/\b\w/g, (character) => character.toUpperCase());
+
+// ATM withdrawals are stored by the backend as "withdrawal".
+// The category identifies them as ATM transactions.
+const getTransactionTypeLabel = (
+  tx: BankTransaction
+): string => {
+  if (
+    tx.type === "withdrawal" &&
+    tx.category?.toLowerCase().includes("atm")
+  ) {
+    return "ATM Withdrawal";
+  }
+
+  return formatLabel(tx.type);
+};
 
 const getStatusClass = (status: string): string => {
   switch (status.toLowerCase()) {
@@ -173,17 +192,20 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
   transactions,
   onShowReceipt,
   onOpenStatement,
+  onRefreshData,
 }) => {
-  // The parent dashboard is responsible for fetching transactions.
-  // Retain the token prop for compatibility with the parent.
-  void token;
-
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] =
     useState<TransactionFilter>("all");
   const [selectedAccountId, setSelectedAccountId] =
     useState("all");
   const [filterDate, setFilterDate] = useState("");
+
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState("");
+
+  // Authentication and data fetching remain the parent's responsibility.
+  void token;
 
   const safeTransactions = Array.isArray(transactions)
     ? transactions
@@ -194,6 +216,30 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
     : [];
 
   // ----------------------------------------------------------
+  // Refresh transactions
+  // ----------------------------------------------------------
+
+  const handleRefresh = useCallback(async () => {
+    if (refreshing) return;
+
+    setRefreshing(true);
+    setRefreshError("");
+
+    try {
+      await onRefreshData();
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unable to refresh transactions.";
+
+      setRefreshError(message);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [onRefreshData, refreshing]);
+
+  // ----------------------------------------------------------
   // Filter transactions
   // ----------------------------------------------------------
 
@@ -201,17 +247,18 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
     const query = search.trim().toLowerCase();
 
     return safeTransactions.filter((tx) => {
+      const transactionAccountId = normalizeAccountId(
+        tx.accountId
+      );
+
       if (
         selectedAccountId !== "all" &&
-        normalizeAccountId(tx.accountId) !== selectedAccountId
+        transactionAccountId !== selectedAccountId
       ) {
         return false;
       }
 
-      if (
-        filterType !== "all" &&
-        tx.type !== filterType
-      ) {
+      if (filterType !== "all" && tx.type !== filterType) {
         return false;
       }
 
@@ -231,6 +278,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
           tx.type,
           tx.status,
           tx.accountNumber,
+          tx.account?.accountNumber,
         ];
 
         const matches = searchableFields.some((field) =>
@@ -306,8 +354,9 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
       amount: getTransactionAmount(tx),
       currency: tx.currency || "INR",
       status: tx.status,
-      description: tx.description || tx.type,
-      accountNumber: tx.accountNumber || "",
+      description: tx.description || getTransactionTypeLabel(tx),
+      accountNumber:
+        tx.accountNumber || tx.account?.accountNumber || "",
       recipient: {
         name: tx.recipientDetails || "Direct Payee",
       },
@@ -338,15 +387,46 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
           </p>
         </div>
 
-        <button
-          type="button"
-          className="btn btn-primary transaction-statement-button"
-          onClick={onOpenStatement}
-        >
-          <FileText size={17} />
-          <span>Generate Statement</span>
-        </button>
+        <div className="transaction-header-actions">
+          <button
+            type="button"
+            className="btn btn-secondary transaction-refresh-button"
+            onClick={handleRefresh}
+            disabled={refreshing}
+          >
+            <RefreshCw
+              size={16}
+              className={refreshing ? "transaction-spin" : ""}
+            />
+            <span>
+              {refreshing ? "Refreshing..." : "Refresh"}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className="btn btn-primary transaction-statement-button"
+            onClick={onOpenStatement}
+          >
+            <FileText size={17} />
+            <span>Generate Statement</span>
+          </button>
+        </div>
       </header>
+
+      {refreshError && (
+        <div className="transaction-refresh-error" role="alert">
+          <span>{refreshError}</span>
+
+          <button
+            type="button"
+            aria-label="Dismiss refresh error"
+            onClick={() => setRefreshError("")}
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
 
       {/* Summary cards */}
       <div className="transaction-summary-grid">
@@ -385,7 +465,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
             </h3>
 
             <span className="transaction-summary-caption">
-              Credit transaction types
+              Money added to the account
             </span>
           </div>
         </article>
@@ -405,7 +485,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
             </h3>
 
             <span className="transaction-summary-caption">
-              Other transaction types
+              Withdrawals and other debits
             </span>
           </div>
         </article>
@@ -415,7 +495,8 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
       <section className="card-panel transaction-filters-panel">
         <div className="transaction-filters-heading">
           <div className="transaction-filters-title">
-            <RefreshCw size={17} />
+            <Search size={17} />
+
             <div>
               <h2>Find Transactions</h2>
               <p>Search and narrow down ledger records</p>
@@ -493,7 +574,9 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
               type="date"
               aria-label="Filter by transaction date"
               value={filterDate}
-              onChange={(event) => setFilterDate(event.target.value)}
+              onChange={(event) =>
+                setFilterDate(event.target.value)
+              }
             />
           </label>
         </div>
@@ -553,10 +636,7 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
             <tbody>
               {filteredTransactions.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan={9}
-                    className="transaction-empty-cell"
-                  >
+                  <td colSpan={9} className="transaction-empty-cell">
                     <div className="transaction-empty-state">
                       <div className="transaction-empty-icon">
                         <ReceiptText size={27} />
@@ -566,9 +646,26 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
 
                       <p>
                         {safeTransactions.length === 0
-                          ? "No transaction records were passed to this page. Verify that the parent dashboard loads the all-transactions API response."
+                          ? "No transaction records were loaded. Use Refresh to try loading the ledger again."
                           : "No transactions match your current filters. Try another search or reset the filters."}
                       </p>
+
+                      {safeTransactions.length === 0 && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={handleRefresh}
+                          disabled={refreshing}
+                        >
+                          <RefreshCw
+                            size={15}
+                            className={
+                              refreshing ? "transaction-spin" : ""
+                            }
+                          />
+                          {refreshing ? "Refreshing..." : "Try again"}
+                        </button>
+                      )}
 
                       {hasActiveFilters && (
                         <button
@@ -587,23 +684,20 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                 filteredTransactions.map((tx) => {
                   const isCredit = CREDIT_TYPES.includes(tx.type);
                   const amount = getTransactionAmount(tx);
-                  const typeLabel = formatLabel(tx.type);
+                  const typeLabel = getTransactionTypeLabel(tx);
 
                   return (
                     <tr key={tx.id || tx.reference}>
-                      {/* Date */}
                       <td className="transaction-date-cell">
                         {formatDate(tx.createdAt)}
                       </td>
 
-                      {/* Reference */}
                       <td>
                         <span className="text-mono transaction-reference">
                           {tx.reference || "—"}
                         </span>
                       </td>
 
-                      {/* Account details */}
                       <td>
                         <div className="transaction-account-cell">
                           <span className="transaction-account-number">
@@ -612,8 +706,6 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                               "—"}
                           </span>
 
-                          {/* accountType belongs to the transaction
-                              object, not the nested account object. */}
                           {tx.accountType && (
                             <span className="transaction-account-type">
                               {tx.accountType}
@@ -622,7 +714,6 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                         </div>
                       </td>
 
-                      {/* Type */}
                       <td>
                         <div className="transaction-type-cell">
                           <span
@@ -647,7 +738,6 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                         </div>
                       </td>
 
-                      {/* Description */}
                       <td>
                         <div className="transaction-description">
                           {tx.description || typeLabel}
@@ -660,14 +750,12 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                         )}
                       </td>
 
-                      {/* Category */}
                       <td>
                         <span className="transaction-category">
                           {tx.category || "General"}
                         </span>
                       </td>
 
-                      {/* Status */}
                       <td>
                         <span
                           className={getStatusClass(
@@ -681,7 +769,6 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                         </span>
                       </td>
 
-                      {/* Amount */}
                       <td
                         className={
                           isCredit
@@ -696,13 +783,12 @@ const TransactionsView: React.FC<TransactionsViewProps> = ({
                         {formatCurrency(amount)}
                       </td>
 
-                      {/* Receipt */}
                       <td className="transaction-receipt-cell">
                         <button
                           type="button"
                           className="btn btn-sm btn-secondary"
                           onClick={() => handleShowReceipt(tx)}
-                          title={`View receipt for ${tx.reference}`}
+                          title={`View receipt for ${tx.reference || "transaction"}`}
                         >
                           <ReceiptText size={14} />
                           <span>Receipt</span>
