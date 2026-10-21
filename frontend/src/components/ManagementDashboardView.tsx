@@ -1,7 +1,10 @@
 import React, { useState } from "react";
 import { StaffPortalView } from "./StaffPortalView";
 import { CustomerDirectoryView } from "./CustomerDirectoryView";
-import { Shield, Users } from "lucide-react";
+
+import { Shield, Users, ContactRound } from "lucide-react";
+import { EmployeeDirectoryView } from "./EmployeeDirectoryView";
+
 
 interface ManagementDashboardViewProps {
   token: string;
@@ -12,11 +15,17 @@ export const ManagementDashboardView: React.FC<ManagementDashboardViewProps> = (
   token,
   onToast,
 }) => {
-  const [activeTab, setActiveTab] = useState<"staff" | "customers">("staff");
+  const [activeTab, setActiveTab] = useState<"staff" | "customers"| "employees">("staff");
 
   const tabs = [
     { id: "staff" as const, label: "Staff Management", icon: Shield },
     { id: "customers" as const, label: "Customer Management", icon: Users },
+    {
+    id: "employees" as const,
+    label: "Employee Directory",
+    icon: ContactRound,
+  },
+
   ];
 
   return (
@@ -50,17 +59,28 @@ export const ManagementDashboardView: React.FC<ManagementDashboardViewProps> = (
       </div>
 
       {/* Content */}
-      <div className="tab-content">
-        {activeTab === "staff" && (
-          <StaffPortalView
-            token={token}
-            onToast={onToast}
-            onShowReceipt={() => {}}
-            initialTab="live"
-          />
-        )}
-        {activeTab === "customers" && <CustomerDirectoryView token={token} />}
-      </div>
+      
+        <div className="tab-content">
+  {activeTab === "staff" && (
+    <StaffPortalView
+      token={token}
+      onToast={onToast}
+      onShowReceipt={() => {}}
+      initialTab="live"
+    />
+  )}
+
+  {activeTab === "customers" && (
+    <CustomerDirectoryView token={token} />
+  )}
+
+  {activeTab === "employees" && (
+    <EmployeeDirectoryView
+      token={token}
+      onToast={onToast}
+    />
+  )}
+</div>
     </div>
   );
 };

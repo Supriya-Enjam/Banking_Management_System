@@ -26,6 +26,7 @@ export async function seedInitialData(): Promise<void> {
     if (!admin) {
       admin = await Customer.create({
         name: "Victoria Sterling",
+        employeeId: "VB-EMP-1003",
         email: "admin@vaultbank.com",
         passwordHash,
         role: "admin",
@@ -37,6 +38,11 @@ export async function seedInitialData(): Promise<void> {
       });
     }
 
+    if (admin && !admin.employeeId) {
+  admin.employeeId = "VB-EMP-1003";
+  await admin.save();
+}
+
     // 2. Create Staff only if missing
     let staff = await Customer.findOne({
       email: "staff@vaultbank.com",
@@ -45,6 +51,7 @@ export async function seedInitialData(): Promise<void> {
     if (!staff) {
       staff = await Customer.create({
         name: "Arthur Vance",
+        employeeId: "VB-EMP-1001",
         email: "staff@vaultbank.com",
         passwordHash: staffPasswordHash,
         role: "staff",
@@ -56,6 +63,13 @@ export async function seedInitialData(): Promise<void> {
       });
     }
 
+    if (staff && !staff.employeeId) {
+  staff.employeeId = "VB-EMP-1001";
+  await staff.save();
+}
+
+    
+    
     // 3. Create or update Management
     let management = await Customer.findOne({
       email: "management@vaultbank.com",
@@ -64,6 +78,7 @@ export async function seedInitialData(): Promise<void> {
     if (!management) {
       management = await Customer.create({
         name: "VaultBank Management",
+        employeeId: "VB-EMP-1002",
         email: "management@vaultbank.com",
         passwordHash: managementPasswordHash,
         role: "management",
@@ -79,8 +94,14 @@ export async function seedInitialData(): Promise<void> {
       management.role = "management";
       management.status = "active";
       management.authProvider = "password";
-      await management.save();
     }
+
+    if (!management.employeeId) {
+      management.employeeId = "VB-EMP-1002";
+    }
+
+    await management.save();
+
 
 
     // 3. Create Demo Customer (Update if exists or create)

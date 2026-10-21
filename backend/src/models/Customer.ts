@@ -49,6 +49,18 @@ const customerSchema = new Schema(
       required: true,
     },
 
+
+employeeId: {
+  type: String,
+  trim: true,
+  uppercase: true,
+  unique: true,
+  sparse: true,
+  minlength: 5,
+  maxlength: 20,
+},
+
+
     phone: {
       type: String,
       trim: true,

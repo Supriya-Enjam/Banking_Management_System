@@ -823,4 +823,46 @@ staffRoutes.get(
   }
 );
 
+
+/**
+ * GET /api/staff/employees
+ * Returns employee IDs for staff, management, and admin accounts.
+ */
+staffRoutes.get(
+  "/employees",
+  requireRoles("staff", "management", "admin"),
+  async (_req: Request, res: Response): Promise<void> => {
+    try {
+      const employees = await Customer.find({
+        role: { $in: ["staff", "management", "admin"] },
+      })
+        .select("name email role employeeId phone status createdAt")
+        .sort({ role: 1, name: 1 })
+        .lean();
+
+      res.json({
+        success: true,
+        count: employees.length,
+        employees: employees.map((employee: any) => ({
+          id: String(employee._id),
+          name: employee.name,
+          email: employee.email,
+          role: employee.role,
+          employeeId: employee.employeeId ?? null,
+          phone: employee.phone || "—",
+          status: employee.status || "active",
+          createdAt: employee.createdAt,
+        })),
+      });
+    } catch (error: unknown) {
+      console.error("Staff employee directory error:", getErrorMessage(error));
+      res.status(500).json({
+        success: false,
+        message: "Failed to load employee directory.",
+      });
+    }
+  }
+);
+
+
 export default staffRoutes;

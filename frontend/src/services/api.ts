@@ -169,6 +169,18 @@ export interface StaffMetrics {
   activeStaffStreamClients: number;
 }
 
+
+export interface StaffEmployee {
+  id: string;
+  name: string;
+  email: string;
+  role: "staff" | "management" | "admin";
+  employeeId: string | null;
+  phone: string;
+  status: string;
+  createdAt: string;
+}
+
 export interface ActiveSession {
   sessionId: string;
   userAgent: string;
@@ -1334,4 +1346,16 @@ export const api = {
       token
     );
   },
+
+  
+  getStaffEmployees(token: string) {
+    return request<{
+      success: boolean;
+      count: number;
+      employees: StaffEmployee[];
+    }>("/staff/employees", {}, token);
+  },
+
+
+
 };
