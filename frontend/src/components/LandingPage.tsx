@@ -1564,6 +1564,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         </div>
       </div>
 
+      
       {/* Footer */}
       <footer className="landing-footer">
         <div className="footer-top">
@@ -1648,6 +1649,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
           {/* Social media column */}
           <div className="footer-social-column">
             <div className="footer-col-title">Connect With Us</div>
+
             <p className="footer-social-description">
               Follow VaultBank for updates, features, and announcements.
             </p>
@@ -1675,6 +1677,37 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 );
               })}
             </div>
+          </div>
+
+          {/* Customer care column */}
+          <div className="footer-customer-care">
+            <div className="footer-col-title">Customer Support</div>
+
+            <p className="footer-support-description">
+              Need assistance? Our customer care team is here to help.
+            </p>
+
+            <a
+              href="tel:1800XXXXXXX"
+              className="footer-customer-care-link"
+              aria-label="Call VaultBank customer care"
+              title="Customer Care"
+            >
+              <span className="footer-phone-icon" aria-hidden="true">
+                ☎
+              </span>
+
+              <span>
+                <span className="footer-phone-label">
+                  Customer Care Number
+                </span>
+                <strong>1800-XXX-XXXX</strong>
+              </span>
+            </a>
+
+            <p className="footer-support-note">
+              We’re happy to assist you with your banking queries.
+            </p>
           </div>
         </div>
 
