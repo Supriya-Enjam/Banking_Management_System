@@ -181,7 +181,7 @@ accountRoutes.get("/", async (_req: Request, res: Response): Promise<void> => {
 });
 
 // Admin / Staff: List all bank accounts across all customers
-accountRoutes.get("/all", requireRoles("staff", "admin"), async (_req: Request, res: Response): Promise<void> => {
+accountRoutes.get("/all", requireRoles("staff", "management", "admin"), async (_req: Request, res: Response): Promise<void> => {
   try {
     const accounts = await BankAccount.find()
       .populate("customerId", "name email phone status kycStatus")

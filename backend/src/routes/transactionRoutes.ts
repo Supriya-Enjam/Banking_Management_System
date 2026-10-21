@@ -1378,7 +1378,7 @@ transactionRoutes.post(
 transactionRoutes.get(
   "/all",
   authenticate,
-  requireRoles("staff", "admin"),
+  requireRoles("staff","management", "admin"),
   async (req: Request, res: Response): Promise<void> => {
     try {
       const { page, limit, skip } = pagination(req.query);
@@ -1471,7 +1471,7 @@ transactionRoutes.get(
 transactionRoutes.get(
   "/stats",
   authenticate,
-  requireRoles("staff", "admin"),
+  requireRoles("staff","management", "admin"),
   async (_req: Request, res: Response): Promise<void> => {
     try {
       const transactions = await Transaction.find({ status: "completed" })

@@ -199,7 +199,7 @@ loanRoutes.get("/my", async (_req: Request, res: Response): Promise<void> => {
 });
 
 // 3. Staff / Admin: List all loans across the bank
-loanRoutes.get("/all", requireRoles("staff", "admin"), async (_req: Request, res: Response): Promise<void> => {
+loanRoutes.get("/all", requireRoles("staff", "management","admin"), async (_req: Request, res: Response): Promise<void> => {
   try {
     const loans = await Loan.find()
       .populate("customerId", "name email phone kycStatus")

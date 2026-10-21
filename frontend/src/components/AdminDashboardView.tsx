@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
-import {
+import { Settings,
+  Link,
   Shield,
   Users,
   Landmark,
@@ -15,6 +16,7 @@ import {
   CheckCircle,
 } from "lucide-react";
 import { api, type AdminMetrics, type AuditLogItem } from "../services/api";
+import { ManagementDashboardView } from "./ManagementDashboardView";
 
 type AdminTab = "overview" | "customers" | "audit" | "reports";
 
@@ -133,6 +135,22 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
       setLoading(false);
     }
   }, [token, customerSearch, auditSeverity, onToast]);
+
+// Automatically refresh dashboard data every 15 seconds.
+useEffect(() => {
+  if (!token) return;
+
+  const intervalId = window.setInterval(() => {
+    if (document.visibilityState === "visible") {
+      void loadAdminData();
+    }
+  }, 15000);
+
+  return () => {
+    window.clearInterval(intervalId);
+  };
+}, [token, loadAdminData]);
+
 
   useEffect(() => {
     void loadAdminData();
@@ -267,6 +285,11 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         <div>
           <h1 className="page-title">
             Executive Admin &amp; Risk Control
+            <Link to="/management">
+              <button className="btn btn-primary" style={{marginLeft: "12px"}}>
+                Management Dashboard
+              </button>
+            </Link>
           </h1>
           <p className="page-subtitle">
             Core banking telemetry, customer lifecycle management, and
@@ -869,6 +892,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   >
                     <option value="customer">Customer</option>
                     <option value="staff">Bank Staff Officer</option>
+                    <option value="management">Management</option>
                     <option value="admin">System Administrator</option>
                   </select>
                 </div>

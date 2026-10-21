@@ -22,7 +22,7 @@ interface HeaderProps {
   notifications: NotificationItem[];
   unreadCount: number;
   onOpenMobileMenu: () => void;
-  onSelectRole: (role: "customer" | "staff" | "admin") => void;
+  onSelectRole: (role: "customer" | "staff" | "management"| "admin") => void;
   onMarkAllNotificationsRead: () => void;
   onNavigate: (page: string) => void;
   onGoToLanding?: () => void;
@@ -60,7 +60,7 @@ export const Header: React.FC<HeaderProps> = ({
     event: React.ChangeEvent<HTMLSelectElement>
   ) => {
     onSelectRole(
-      event.target.value as "customer" | "staff" | "admin"
+      event.target.value as "customer" | "staff" | "management" |"admin"
     );
   };
 
@@ -91,6 +91,8 @@ export const Header: React.FC<HeaderProps> = ({
           <span>
             {customer.role === "admin"
               ? "Executive Admin"
+              : customer.role === "management"
+              ? "Management Portal"
               : customer.role === "staff"
                 ? "Bank Staff Portal"
                 : "Customer Portal"}
@@ -107,11 +109,13 @@ export const Header: React.FC<HeaderProps> = ({
           placeholder="Search accounts, transfers, or transactions..."
           aria-label="Search banking records"
           onFocus={() => {
-            onNavigate(
-              customer.role === "admin"
-                ? "customers"
-                : "transactions"
-            );
+            if (customer.role === "admin") {
+              onNavigate("customers");
+            } else if (customer.role === "management") {
+              onNavigate("management");
+            } else {
+              onNavigate("transactions");
+            }
           }}
         />
       </div>
@@ -170,6 +174,9 @@ export const Header: React.FC<HeaderProps> = ({
               Bank Staff (Arthur Vance)
             </option>
 
+            <option value="management">
+            Management (Management Portal)
+            </option>
             <option value="admin">
               Administrator (Victoria Sterling)
             </option>

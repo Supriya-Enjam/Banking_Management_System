@@ -3,7 +3,7 @@ import type { RequestHandler } from "express";
 import jwt from "jsonwebtoken";
 import { Session } from "../models/Session";
 
-export type UserRole = "customer" | "staff" | "admin";
+export type UserRole = "customer" | "staff" | "management" | "admin";
 
 export interface AuthenticatedUser {
   customerId: string;
@@ -74,8 +74,14 @@ export const authenticate: RequestHandler = async (req, res, next) => {
       typeof decoded.sid !== "string" ||
       !decoded.sid ||
       typeof decoded.role !== "string" ||
-      !["customer", "staff", "admin"].includes(decoded.role)
+      !["customer", "staff", "management", "admin"].includes(decoded.role)
     ) {
+console.warn("JWT payload validation failed:", {
+  hasSubject: typeof decoded?.sub === "string" && Boolean(decoded.sub),
+  hasSessionId: typeof decoded?.sid === "string" && Boolean(decoded.sid),
+  role: decoded?.role,
+});
+
       res.status(401).json({
         success: false,
         message: "Invalid authentication token. Please log in again.",
@@ -143,6 +149,13 @@ export const authenticate: RequestHandler = async (req, res, next) => {
       });
       return;
     }
+
+    console.warn(
+  "JWT verification failed:",
+  error instanceof Error ? error.name : "UnknownError",
+  error instanceof Error ? error.message : "Unknown error"
+);
+
 
     if (error instanceof jwt.JsonWebTokenError) {
       res.status(401).json({

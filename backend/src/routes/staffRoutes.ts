@@ -13,7 +13,7 @@ import { staffEventBus, broadcastStaffEvent } from "../utils/staffEventBus";
 export const staffRoutes = Router();
 
 staffRoutes.use(authenticate);
-staffRoutes.use(requireRoles("staff", "admin"));
+
 
 type TransactionKind = "deposit" | "withdrawal" | "transfer";
 
@@ -79,6 +79,7 @@ function getReference(activity: ActivityRecord): string | null {
 
 staffRoutes.get(
   "/live-stream",
+  requireRoles("staff", "management", "admin"),
   (_req: Request, res: Response): void => {
     if (res.destroyed || res.writableEnded) return;
 
@@ -102,6 +103,7 @@ staffRoutes.get(
 
 staffRoutes.get(
   "/metrics",
+  requireRoles("staff", "management", "admin"),
   async (_req: Request, res: Response): Promise<void> => {
     try {
       const startOfToday = new Date();
@@ -169,6 +171,7 @@ staffRoutes.get(
 
 staffRoutes.get(
   "/live-activity",
+  requireRoles("staff", "management", "admin"),
   async (req: Request, res: Response): Promise<void> => {
     try {
       const requestedLimit = Number.parseInt(
@@ -382,6 +385,7 @@ staffRoutes.get(
 
 staffRoutes.get(
   "/kyc-customers",
+  requireRoles("staff", "management", "admin"),
   async (_req: Request, res: Response): Promise<void> => {
     try {
       const customers = await Customer.find({ role: "customer" })
@@ -419,6 +423,7 @@ staffRoutes.get(
 
 staffRoutes.patch(
   "/kyc/:id",
+  requireRoles("staff",  "admin"),
   async (req: Request, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
@@ -702,6 +707,7 @@ async function processTellerTransaction(
 
 staffRoutes.post(
   "/teller-deposit",
+   requireRoles("staff", "admin"),
   async (req: Request, res: Response): Promise<void> => {
     await processTellerTransaction(req, res, "deposit");
   }
@@ -714,6 +720,7 @@ staffRoutes.post(
 
 staffRoutes.post(
   "/teller-withdraw",
+   requireRoles("staff", "admin"),
   async (req: Request, res: Response): Promise<void> => {
     await processTellerTransaction(req, res, "withdrawal");
   }
@@ -726,6 +733,7 @@ staffRoutes.post(
 
 staffRoutes.get(
   "/customers",
+  requireRoles("staff", "management", "admin"),
   async (req: Request, res: Response): Promise<void> => {
     try {
       const { search, status, kycStatus } = req.query;

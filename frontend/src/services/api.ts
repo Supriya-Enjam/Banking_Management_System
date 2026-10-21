@@ -9,7 +9,7 @@ export interface Customer {
   id: string;
   name: string;
   email: string;
-  role: "customer" | "staff" | "admin";
+  role: "customer" | "staff" | "management" | "admin";
   phone?: string;
   address?: string;
   kycStatus?: "verified" | "pending" | "rejected";

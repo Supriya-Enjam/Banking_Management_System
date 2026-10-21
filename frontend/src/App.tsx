@@ -5,7 +5,7 @@ import {
   Routes,
   Route,
   Navigate,
-  useLocation,
+  
 } from "react-router-dom";
 
 import { Header } from "./components/Header";
@@ -22,6 +22,8 @@ import TransactionsView from "./components/TransactionsView";
 import { ProfileView } from "./components/ProfileView";
 import { StaffPortalView } from "./components/StaffPortalView";
 import { AdminDashboardView } from "./components/AdminDashboardView";
+
+import { ManagementDashboardView } from "./components/ManagementDashboardView";
 import { ReceiptModal } from "./components/ReceiptModal";
 import { StatementModal } from "./components/StatementModal";
 import ActiveSessionsView from "./components/ActiveSessionsView";
@@ -71,7 +73,7 @@ type AdminInitialTab =
 // --------------------------------------------------
 
 function BankingApp() {
-  const location = useLocation();
+  
 
   // --------------------------------------------------
   // Authentication
@@ -155,6 +157,7 @@ function BankingApp() {
         const parsed = JSON.parse(saved) as Customer;
 
         if (parsed.role === "staff") return "teller";
+        if (parsed.role == "management") return "management"
         if (parsed.role === "admin") return "overview";
       } catch {
         // Use the default page.
@@ -365,7 +368,9 @@ function BankingApp() {
 
     if (newCustomer.role === "staff") {
       setActivePage("teller");
-    } else if (newCustomer.role === "admin") {
+    } else if (newCustomer.role === "management") {
+      setActivePage("management"); 
+    }  else if (newCustomer.role === "admin") {
       setActivePage("overview");
     } else {
       setActivePage("overview");
@@ -416,10 +421,10 @@ function BankingApp() {
   // --------------------------------------------------
 
   const handleQuickRoleSwitch = async (
-    role: "customer" | "staff" | "admin"
+    role: "customer" | "staff" | "management" | "admin"
   ) => {
     const credentials: Record<
-      "customer" | "staff" | "admin",
+      "customer" | "staff" | "management" |"admin",
       { email: string; pass: string }
     > = {
       customer: {
@@ -429,6 +434,10 @@ function BankingApp() {
       staff: {
         email: "staff@vaultbank.com",
         pass: "Staff@12345",
+      },
+      management: {
+        email: "management@vaultbank.com",
+        pass: "Management@12345",
       },
       admin: {
         email: "admin@vaultbank.com",
@@ -902,6 +911,49 @@ function BankingApp() {
               )}
             </>
           )}
+              
+
+          
+{/* MANAGEMENT PORTAL */}
+{customer.role === "management" && (
+  <>
+    {activePage === "management" && (
+      <ManagementDashboardView
+        token={token}
+        onToast={showToast}
+      />
+    )}
+
+    {activePage === "transactions" && (
+      <TransactionsView
+        token={token}
+        accounts={accounts}
+        transactions={transactions}
+        onShowReceipt={setActiveReceipt}
+        onOpenStatement={() => setShowStatementModal(true)}
+        onRefreshData={loadUserData}
+      />
+    )}
+
+    {activePage === "profile" && (
+      <ProfileView
+        token={token}
+        customer={customer}
+        onRefreshData={loadUserData}
+        onToast={showToast}
+      />
+    )}
+  </>
+)}
+
+{/* ADMIN PORTAL */}
+{customer.role === "admin" && activePage === "management" && (
+  <ManagementDashboardView
+    token={token}
+    onToast={showToast}
+  />
+)}
+
         </main>
       </div>
 
@@ -959,7 +1011,8 @@ export default function App() {
           path="*"
           element={<Navigate to="/" replace />}
         />
-      </Routes>
+        
+  </Routes>
     </BrowserRouter>
   );
 }

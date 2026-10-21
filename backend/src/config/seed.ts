@@ -10,43 +10,78 @@ import { AuditLog } from "../models/AuditLog";
 
 export async function seedInitialData(): Promise<void> {
   try {
-    const adminExists = await Customer.findOne({ email: "admin@vaultbank.com" });
-    if (adminExists) {
-      return; // Already seeded
-    }
-
-    console.log("🌱 Seeding initial demo data for VaultBank...");
+        console.log("🌱 Seeding initial demo data for VaultBank...");
 
     const passwordHash = await bcrypt.hash("Admin@12345", 10);
     const demoPasswordHash = await bcrypt.hash("Demo@12345", 10);
     const staffPasswordHash = await bcrypt.hash("Staff@12345", 10);
+    const managementPasswordHash = await bcrypt.hash("Management@12345", 10);
     const sarahPasswordHash = await bcrypt.hash("Sarah@12345", 10);
 
-    // 1. Create Admin
-    const admin = await Customer.create({
-      name: "Victoria Sterling",
+    // 1. Create Admin only if missing
+    let admin = await Customer.findOne({
       email: "admin@vaultbank.com",
-      passwordHash,
-      role: "admin",
-      phone: "+91 99887 76655",
-      address: "VaultBank Towers, Financial Expressway, Mumbai",
-      kycStatus: "verified",
-      dailyLimitRupees: 500000,
-      status: "active",
     });
 
-    // 2. Create Staff
-    const staff = await Customer.create({
-      name: "Arthur Vance",
+    if (!admin) {
+      admin = await Customer.create({
+        name: "Victoria Sterling",
+        email: "admin@vaultbank.com",
+        passwordHash,
+        role: "admin",
+        phone: "+91 99887 76655",
+        address: "VaultBank Towers, Financial Expressway, Mumbai",
+        kycStatus: "verified",
+        dailyLimitRupees: 500000,
+        status: "active",
+      });
+    }
+
+    // 2. Create Staff only if missing
+    let staff = await Customer.findOne({
       email: "staff@vaultbank.com",
-      passwordHash: staffPasswordHash,
-      role: "staff",
-      phone: "+91 98112 23344",
-      address: "VaultBank Operations Hub, Bandra-Kurla Complex",
-      kycStatus: "verified",
-      dailyLimitRupees: 200000,
-      status: "active",
     });
+
+    if (!staff) {
+      staff = await Customer.create({
+        name: "Arthur Vance",
+        email: "staff@vaultbank.com",
+        passwordHash: staffPasswordHash,
+        role: "staff",
+        phone: "+91 98112 23344",
+        address: "VaultBank Operations Hub, Bandra-Kurla Complex",
+        kycStatus: "verified",
+        dailyLimitRupees: 200000,
+        status: "active",
+      });
+    }
+
+    // 3. Create or update Management
+    let management = await Customer.findOne({
+      email: "management@vaultbank.com",
+    });
+
+    if (!management) {
+      management = await Customer.create({
+        name: "VaultBank Management",
+        email: "management@vaultbank.com",
+        passwordHash: managementPasswordHash,
+        role: "management",
+        phone: "+91 98000 12345",
+        address: "VaultBank Management Office, Mumbai",
+        kycStatus: "verified",
+        dailyLimitRupees: 200000,
+        status: "active",
+      });
+    } else {
+      management.name = "VaultBank Management";
+      management.passwordHash = managementPasswordHash;
+      management.role = "management";
+      management.status = "active";
+      management.authProvider = "password";
+      await management.save();
+    }
+
 
     // 3. Create Demo Customer (Update if exists or create)
     let customer = await Customer.findOne({ email: "demo.customer@example.com" });

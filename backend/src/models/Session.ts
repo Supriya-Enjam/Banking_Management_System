@@ -19,7 +19,7 @@ const sessionSchema = new Schema(
 
     role: {
       type: String,
-      enum: ["customer", "staff", "admin"],
+      enum: ["customer", "staff", "management",  "admin"],
       required: true,
     },
 

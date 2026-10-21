@@ -1,4 +1,3 @@
-
 import React from "react";
 import {
   Home,
@@ -16,6 +15,8 @@ import {
   Activity,
   X,
   Monitor,
+  ShieldCheck,
+  Building2,
 } from "lucide-react";
 
 import type { Customer } from "../services/api";
@@ -38,13 +39,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onLogout,
 }) => {
   const getNavItems = () => {
-    // ADMIN NAVIGATION
+    // ADMIN: All management and administrative navigation
     if (customer.role === "admin") {
       return [
         {
           id: "overview",
-          label: "Executive Telemetry",
+          label: "Executive Dashboard",
           icon: Landmark,
+        },
+        {
+          id: "management",
+          label: "Management Dashboard",
+          icon: Building2,
         },
         {
           id: "customers",
@@ -74,7 +80,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ];
     }
 
-    // STAFF NAVIGATION
+    // MANAGEMENT: Staff oversight and customer management
+    if (customer.role === "management") {
+      return [
+        {
+          id: "management",
+          label: "Management Dashboard",
+          icon: Building2,
+        },
+        {
+          id: "transactions",
+          label: "Transaction Monitoring",
+          icon: Activity,
+        },
+        {
+          id: "profile",
+          label: "Profile & Settings",
+          icon: Settings,
+        },
+      ];
+    }
+
+    // STAFF: Branch and customer-service operations
     if (customer.role === "staff") {
       return [
         {
@@ -110,7 +137,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ];
     }
 
-    // CUSTOMER NAVIGATION
+    // CUSTOMER: Personal banking
     return [
       {
         id: "overview",
@@ -126,6 +153,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
         id: "cards",
         label: "Debit Cards",
         icon: CreditCard,
+      },
+      {
+        id: "credit-cards",
+        label: "Credit Cards",
+        icon: CreditCard,
+      },
+      {
+        id: "credit-card-application",
+        label: "Credit Card Application",
+        icon: FileText,
       },
       {
         id: "transfer",
@@ -162,26 +199,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
         label: "Profile & Security",
         icon: Settings,
       },
-      {
-        id: "credit-cards",
-        label: "Credit Cards",
-        icon: CreditCard,
-      },
-
-      {
-        id: "credit-card-application",
-        label: "Credit Card Application",
-        icon: FileText,
-      },
     ];
   };
 
   const navItems = getNavItems();
 
+  const sectionTitle =
+    customer.role === "admin"
+      ? "Enterprise Administration"
+      : customer.role === "management"
+        ? "Management & Oversight"
+        : customer.role === "staff"
+          ? "Branch Operations"
+          : "Personal Banking";
+
   return (
-    <aside
-      className={`sidebar ${isOpen ? "open" : ""}`}
-    >
+    <aside className={`sidebar ${isOpen ? "open" : ""}`}>
       {/* Mobile Sidebar Header */}
       <div className="sidebar-brand-mobile">
         <div
@@ -194,10 +227,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             color: "#fff",
           }}
         >
-          <Landmark
-            size={20}
-            className="text-emerald"
-          />
+          <Landmark size={20} className="text-emerald" />
           <span>VaultBank</span>
         </div>
 
@@ -212,17 +242,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Navigation */}
-      <nav
-        className="sidebar-nav"
-        aria-label="Main navigation"
-      >
-        <div className="nav-section-title">
-          {customer.role === "admin"
-            ? "Enterprise Governance"
-            : customer.role === "staff"
-              ? "Branch Operations"
-              : "Core Banking"}
-        </div>
+      <nav className="sidebar-nav" aria-label="Main navigation">
+        <div className="nav-section-title">{sectionTitle}</div>
 
         {navItems.map((item) => {
           const isActive = activePage === item.id;
@@ -232,22 +253,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               type="button"
               key={item.id}
-              className={`nav-item ${
-                isActive ? "active" : ""
-              }`}
+              className={`nav-item ${isActive ? "active" : ""}`}
               onClick={() => {
                 onNavigate(item.id);
                 onCloseMobile();
               }}
-              aria-current={
-                isActive ? "page" : undefined
-              }
+              aria-current={isActive ? "page" : undefined}
             >
-              <Icon
-                size={18}
-                aria-hidden="true"
-              />
-
+              <Icon size={18} aria-hidden="true" />
               <span>{item.label}</span>
             </button>
           );
@@ -261,11 +274,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           className="logout-btn"
           onClick={onLogout}
         >
-          <LogOut
-            size={16}
-            aria-hidden="true"
-          />
-
+          <LogOut size={16} aria-hidden="true" />
           <span>Sign Out</span>
         </button>
       </div>

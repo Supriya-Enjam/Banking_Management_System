@@ -25,14 +25,19 @@ const MAX_OTP_ATTEMPTS = 5;
 const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
 
 const DEMO_STAFF_EMAIL = "staff@vaultbank.com";
+const DEMO_MANAGEMENT_EMAIL = "management@vaultbank.com";
 const DEMO_ADMIN_EMAIL = "admin@vaultbank.com";
 
 const isDevelopment = process.env.NODE_ENV !== "production";
 
-const isDemoStaffOrAdmin = (email: string): boolean =>
-  [DEMO_STAFF_EMAIL, DEMO_ADMIN_EMAIL].includes(
-    email.trim().toLowerCase()
-  );
+
+
+const isDemoPrivilegedEmail = (email: string): boolean =>
+  [
+    DEMO_STAFF_EMAIL,
+    DEMO_MANAGEMENT_EMAIL,
+    DEMO_ADMIN_EMAIL,
+  ].includes(email.trim().toLowerCase());
 
 // ============================================================
 // VALIDATION SCHEMAS
@@ -177,7 +182,7 @@ const maskEmail = (email: string): string =>
   email.replace(/^(.{1,2})[^@]*(@.*)$/, "$1***$2");
 
 function useTerminalOtpDescription(email: string): string {
-  return isDevelopment && isDemoStaffOrAdmin(email)
+  return isDevelopment && isDemoPrivilegedEmail(email)
     ? "Password accepted; development demo OTP generated in backend terminal."
     : "Password accepted; email second-factor challenge created.";
 }
@@ -197,7 +202,7 @@ const createOtpChallenge = async (customer: {
   const now = new Date();
 
   const useTerminalOtp =
-    isDevelopment && isDemoStaffOrAdmin(email);
+    isDevelopment && isDemoPrivilegedEmail(email);
 
   await LoginOtp.deleteMany({
     customerId: customer._id,
@@ -263,6 +268,13 @@ authRoutes.get("/demo-users", (_req: Request, res: Response) => {
         email: DEMO_STAFF_EMAIL,
         password: "Staff@12345",
         description: "Bank staff portal demo account",
+      },
+      {
+        role: "management",
+        label: "Morgan Blake (Management)",
+        email: DEMO_MANAGEMENT_EMAIL,
+        password: "Management@12345",
+        description: "Management oversight and customer-management demo account",
       },
       {
         role: "admin",
@@ -452,7 +464,7 @@ authRoutes.post(
         requiresTwoFactor: true,
         challengeId: challenge.challengeId,
         message:
-          isDevelopment && isDemoStaffOrAdmin(email)
+          isDevelopment && isDemoPrivilegedEmail(email)
             ? "Demo verification code generated. Check the backend terminal."
             : "A verification code has been sent to your registered email.",
         expiresIn: Math.floor(OTP_EXPIRY_MS / 1000),
@@ -769,7 +781,7 @@ authRoutes.post(
         requiresTwoFactor: true,
         challengeId: challenge.challengeId,
         message:
-          isDevelopment && isDemoStaffOrAdmin(email)
+          isDevelopment && isDemoPrivilegedEmail(email)
             ? "Demo verification code generated. Check the backend terminal."
             : "A verification code has been sent to your registered email.",
         expiresIn: Math.floor(OTP_EXPIRY_MS / 1000),
