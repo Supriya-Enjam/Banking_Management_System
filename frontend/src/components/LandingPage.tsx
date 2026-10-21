@@ -24,6 +24,13 @@ import {
   Calculator,
   Laptop,
 } from "lucide-react";
+import {
+  FaLinkedinIn,
+  FaInstagram,
+  FaFacebookF,
+  FaYoutube,
+  FaGithub,
+} from "react-icons/fa";
 import type { Customer } from "../services/api";
 import "../LandingPage.css";
 
@@ -33,6 +40,39 @@ interface LandingPageProps {
   onQuickDemoLogin: (email: string, pass: string) => void;
   onEnterDashboard: () => void;
 }
+
+const socialLinks = [
+  {
+    name: "LinkedIn",
+    href: "https://www.linkedin.com/",
+    icon: FaLinkedinIn,
+    className: "social-linkedin",
+  },
+  {
+    name: "Instagram",
+    href: "https://www.instagram.com/",
+    icon: FaInstagram,
+    className: "social-instagram",
+  },
+  {
+    name: "Facebook",
+    href: "https://www.facebook.com/",
+    icon: FaFacebookF,
+    className: "social-facebook",
+  },
+  {
+    name: "X",
+    href: "https://x.com/",
+    icon: null,
+    className: "social-x",
+  },
+  {
+    name: "YouTube",
+    href: "https://www.youtube.com/",
+    icon: FaYoutube,
+    className: "social-youtube",
+  },
+];
 
 export const LandingPage: React.FC<LandingPageProps> = ({
   customer,
@@ -66,6 +106,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
   // FAQ
   const [openFaq, setOpenFaq] = useState<number | null>(0);
 
+  // Fixed deposit calculation
   useEffect(() => {
     let rate = 7.25;
 
@@ -85,6 +126,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
     setFdInterest(maturity - fdAmount);
   }, [fdAmount, fdTenure]);
 
+  // Loan EMI calculation
   useEffect(() => {
     const rates = {
       Personal: 10.5,
@@ -404,9 +446,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             >
               <Zap size={24} />
             </div>
-            <h3 className="landing-feature-title">
-              Fund Transfers
-            </h3>
+            <h3 className="landing-feature-title">Fund Transfers</h3>
             <p className="landing-feature-desc">
               Explore the fund transfer workflow and account balance
               validation available in the application.
@@ -423,9 +463,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             >
               <Landmark size={24} />
             </div>
-            <h3 className="landing-feature-title">
-              Account Management
-            </h3>
+            <h3 className="landing-feature-title">Account Management</h3>
             <p className="landing-feature-desc">
               Review supported account types and manage banking details
               through the available dashboard features.
@@ -461,9 +499,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             >
               <CreditCard size={24} />
             </div>
-            <h3 className="landing-feature-title">
-              Loan EMI Calculator
-            </h3>
+            <h3 className="landing-feature-title">Loan EMI Calculator</h3>
             <p className="landing-feature-desc">
               Estimate monthly repayments for different loan types, amounts,
               and repayment periods.
@@ -1317,9 +1353,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
       <section id="security" className="landing-section">
         <div className="section-header-center">
           <span className="section-tag">Security &amp; Risk</span>
-          <h2 className="section-heading">
-            Security at Every Step
-          </h2>
+          <h2 className="section-heading">Security at Every Step</h2>
           <p className="section-subheading">
             Explore the security-related controls implemented in this banking
             application. Production compliance requires independent review
@@ -1445,12 +1479,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({
       {/* FAQ section */}
       <section id="faq" className="landing-section">
         <div className="section-header-center">
-          <span className="section-tag">
-            Frequently Asked Questions
-          </span>
-          <h2 className="section-heading">
-            Answers to Common Inquiries
-          </h2>
+          <span className="section-tag">Frequently Asked Questions</span>
+          <h2 className="section-heading">Answers to Common Inquiries</h2>
           <p className="section-subheading">
             Learn about account management, transaction workflows, and the
             calculators available in this project.
@@ -1534,19 +1564,18 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         </div>
       </div>
 
-      {/* Footer — Quick Demo Access removed */}
+      {/* Footer */}
       <footer className="landing-footer">
         <div className="footer-top">
+          {/* Brand column */}
           <div>
-            <div
-              className="landing-brand"
-              style={{ marginBottom: 14 }}
-            >
+            <div className="landing-brand" style={{ marginBottom: 14 }}>
               <div className="landing-brand-icon">
                 <Landmark size={20} />
               </div>
               <span>VaultBank</span>
             </div>
+
             <p
               style={{
                 color: "#94a3b8",
@@ -1560,6 +1589,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             </p>
           </div>
 
+          {/* Banking products */}
           <div>
             <div className="footer-col-title">Banking Products</div>
             <ul className="footer-links">
@@ -1586,6 +1616,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({
             </ul>
           </div>
 
+          {/* Operations and security */}
           <div>
             <div className="footer-col-title">
               Operations &amp; Security
@@ -1613,8 +1644,41 @@ export const LandingPage: React.FC<LandingPageProps> = ({
               </li>
             </ul>
           </div>
+
+          {/* Social media column */}
+          <div className="footer-social-column">
+            <div className="footer-col-title">Connect With Us</div>
+            <p className="footer-social-description">
+              Follow VaultBank for updates, features, and announcements.
+            </p>
+
+            <div className="footer-social-links">
+              {socialLinks.map((social) => {
+                const Icon = social.icon;
+
+                return (
+                  <a
+                    key={social.name}
+                    href={social.href}
+                    className={`footer-social-link ${social.className}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`Visit VaultBank on ${social.name}`}
+                    title={social.name}
+                  >
+                    {Icon ? (
+                      <Icon size={19} />
+                    ) : (
+                      <span className="social-x-icon">𝕏</span>
+                    )}
+                  </a>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
+        {/* Footer bottom */}
         <div className="footer-bottom">
           <div>
             © {new Date().getFullYear()} VaultBank. All rights reserved.
