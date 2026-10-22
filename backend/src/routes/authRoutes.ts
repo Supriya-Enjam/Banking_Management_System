@@ -1041,6 +1041,64 @@ authRoutes.put(
 );
 
 // ============================================================
+// KEEP ALIVE — REFRESH SESSION ACTIVITY
+// ============================================================
+
+authRoutes.post(
+  "/session/keep-alive",
+  authenticate,
+  async (_req: Request, res: Response): Promise<void> => {
+    try {
+      const user = res.locals.authenticatedUser;
+
+      if (!user) {
+        res.status(401).json({
+          success: false,
+          message: "Authentication required.",
+        });
+        return;
+      }
+
+      const now = new Date();
+
+      const session = await Session.findOneAndUpdate(
+        {
+          sessionId: user.sessionId,
+          customerId: user.customerId,
+          role: user.role,
+          revokedAt: null,
+          expiresAt: { $gt: now },
+        },
+        {
+          $set: { lastActivityAt: now },
+        },
+        { new: true }
+      );
+
+      if (!session) {
+        res.status(401).json({
+          success: false,
+          message: "Session expired. Please log in again.",
+        });
+        return;
+      }
+
+      res.status(200).json({
+        success: true,
+        message: "Session activity refreshed.",
+      });
+    } catch (error: unknown) {
+      console.error("Session keep-alive error:", error);
+
+      res.status(500).json({
+        success: false,
+        message: "Unable to refresh your session.",
+      });
+    }
+  }
+);
+
+// ============================================================
 // LOGOUT — REVOKE CURRENT SESSION
 // Requires authenticate.ts to expose sessionId.
 // ============================================================

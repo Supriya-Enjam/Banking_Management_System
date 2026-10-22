@@ -1,11 +1,10 @@
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   BrowserRouter,
   Routes,
   Route,
   Navigate,
-  
 } from "react-router-dom";
 
 import { Header } from "./components/Header";
@@ -22,11 +21,11 @@ import TransactionsView from "./components/TransactionsView";
 import { ProfileView } from "./components/ProfileView";
 import { StaffPortalView } from "./components/StaffPortalView";
 import { AdminDashboardView } from "./components/AdminDashboardView";
-
 import { ManagementDashboardView } from "./components/ManagementDashboardView";
 import { ReceiptModal } from "./components/ReceiptModal";
 import { StatementModal } from "./components/StatementModal";
 import ActiveSessionsView from "./components/ActiveSessionsView";
+import { SessionExpiryCard } from "./components/SessionExpiryCard";
 
 import CardsView from "./components/CardsView";
 import CreditCardApplicationView from "./components/CreditCardApplicationView";
@@ -69,15 +68,31 @@ type AdminInitialTab =
   | "reports";
 
 // --------------------------------------------------
-// Main banking application
+// Session configuration
+// --------------------------------------------------
+
+const API_BASE_URL = "http://localhost:5000/api";
+
+// TESTING: Show the warning after 30 seconds of inactivity.
+// Change to 13 * 60 * 1000 after testing.
+const SESSION_WARNING_AFTER_MS = 30 * 1000;
+
+// Refresh server activity at most once per minute.
+const SESSION_PING_INTERVAL_MS = 60 * 1000;
+
+// Countdown displayed by SessionExpiryCard.
+const SESSION_COUNTDOWN_SECONDS = 120;
+
+// --------------------------------------------------
+// Main application
 // --------------------------------------------------
 
 function BankingApp() {
-  
+  // --------------------------------------------------
+  // Authentication and session state
+  // --------------------------------------------------
 
-  // --------------------------------------------------
-  // Authentication
-  // --------------------------------------------------
+  const [showSessionExpiry, setShowSessionExpiry] = useState(false);
 
   const [token, setToken] = useState<string>(
     () => localStorage.getItem("vb_token") || ""
@@ -102,14 +117,27 @@ function BankingApp() {
 
   const [authIsRegister, setAuthIsRegister] = useState(false);
 
+  const sessionWarningTimerRef = useRef<number | null>(null);
+  const lastSessionPingAtRef = useRef(0);
+  const sessionWarningOpenRef = useRef(false);
+
+  // IMPORTANT:
+  // This boolean remains stable when the customer object is refreshed.
+  // It prevents the inactivity timer from restarting just because
+  // loadUserData() receives an updated customer object.
+  const isCustomerReady = Boolean(customer);
+
+  // Keep the warning ref synchronized with React state.
+  useEffect(() => {
+    sessionWarningOpenRef.current = showSessionExpiry;
+  }, [showSessionExpiry]);
+
   // --------------------------------------------------
   // Theme
   // --------------------------------------------------
 
   const [theme, setTheme] = useState<Theme>(() =>
-    localStorage.getItem("vb_theme") === "dark"
-      ? "dark"
-      : "light"
+    localStorage.getItem("vb_theme") === "dark" ? "dark" : "light"
   );
 
   useEffect(() => {
@@ -122,9 +150,7 @@ function BankingApp() {
   }, [theme]);
 
   const toggleTheme = useCallback(() => {
-    setTheme((previous) =>
-      previous === "dark" ? "light" : "dark"
-    );
+    setTheme((previous) => (previous === "dark" ? "light" : "dark"));
   }, []);
 
   // --------------------------------------------------
@@ -142,8 +168,7 @@ function BankingApp() {
   // --------------------------------------------------
 
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
-  const [unreadNotificationsCount, setUnreadNotificationsCount] =
-    useState(0);
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
 
   // --------------------------------------------------
   // Navigation
@@ -157,7 +182,7 @@ function BankingApp() {
         const parsed = JSON.parse(saved) as Customer;
 
         if (parsed.role === "staff") return "teller";
-        if (parsed.role == "management") return "management"
+        if (parsed.role === "management") return "management";
         if (parsed.role === "admin") return "overview";
       } catch {
         // Use the default page.
@@ -202,6 +227,62 @@ function BankingApp() {
   }, [toastMessage]);
 
   // --------------------------------------------------
+  // Logout
+  // --------------------------------------------------
+
+  const handleLogout = useCallback(() => {
+    const currentToken = localStorage.getItem("vb_token");
+
+    // Revoke the server session in the background.
+    // Local logout must work even if the server is unavailable.
+    if (currentToken) {
+      void fetch(`${API_BASE_URL}/auth/logout`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${currentToken}`,
+        },
+      }).catch((error) => {
+        console.error("Backend logout request failed:", error);
+      });
+    }
+
+    if (sessionWarningTimerRef.current !== null) {
+      window.clearTimeout(sessionWarningTimerRef.current);
+      sessionWarningTimerRef.current = null;
+    }
+
+    sessionWarningOpenRef.current = false;
+    lastSessionPingAtRef.current = 0;
+
+    setShowSessionExpiry(false);
+    setToken("");
+    setCustomer(null);
+
+    localStorage.removeItem("vb_token");
+    localStorage.removeItem("vb_customer");
+
+    setViewMode("landing");
+    setActivePage("overview");
+    setMobileMenuOpen(false);
+
+    setAccounts([]);
+    setTransactions([]);
+    setBeneficiaries([]);
+    setLoans([]);
+    setFixedDeposits([]);
+
+    setNotifications([]);
+    setUnreadNotificationsCount(0);
+
+    setActiveReceipt(null);
+    setShowStatementModal(false);
+    setDepWithModalAccount(undefined);
+    setDepWithModalMode("deposit");
+
+    showToast("You have been signed out safely.");
+  }, [showToast]);
+
+  // --------------------------------------------------
   // Load banking and notification data
   // --------------------------------------------------
 
@@ -209,9 +290,7 @@ function BankingApp() {
     if (!token) return;
 
     try {
-      const profileResponse = await api
-        .getMe(token)
-        .catch(() => null);
+      const profileResponse = await api.getMe(token).catch(() => null);
 
       const currentCustomer: Customer | null =
         profileResponse?.customer ?? customer;
@@ -230,13 +309,8 @@ function BankingApp() {
         .catch(() => null);
 
       if (notificationResponse) {
-        setNotifications(
-          notificationResponse.notifications || []
-        );
-
-        setUnreadNotificationsCount(
-          notificationResponse.unreadCount || 0
-        );
+        setNotifications(notificationResponse.notifications || []);
+        setUnreadNotificationsCount(notificationResponse.unreadCount || 0);
       }
 
       const currentRole = currentCustomer?.role;
@@ -261,38 +335,25 @@ function BankingApp() {
         ]);
 
         setAccounts(accountsResponse.accounts || []);
-
-        setTransactions(
-          transactionsResponse.transactions || []
-        );
-
-        setBeneficiaries(
-          beneficiariesResponse.beneficiaries || []
-        );
-
+        setTransactions(transactionsResponse.transactions || []);
+        setBeneficiaries(beneficiariesResponse.beneficiaries || []);
         setLoans(loansResponse.loans || []);
-
-        setFixedDeposits(
-          fixedDepositsResponse.fixedDeposits || []
-        );
+        setFixedDeposits(fixedDepositsResponse.fixedDeposits || []);
 
         return;
       }
 
-      // STAFF / ADMIN: management transaction ledger.
-      const [accountsResult, ledgerResult] =
-        await Promise.allSettled([
-          api.getAccounts(token),
-          api.getAllTransactions(token, {
-            page: 1,
-            limit: 100,
-          }),
-        ]);
+      // STAFF / MANAGEMENT / ADMIN: management transaction ledger.
+      const [accountsResult, ledgerResult] = await Promise.allSettled([
+        api.getAccounts(token),
+        api.getAllTransactions(token, {
+          page: 1,
+          limit: 100,
+        }),
+      ]);
 
       if (accountsResult.status === "fulfilled") {
-        setAccounts(
-          accountsResult.value.accounts || []
-        );
+        setAccounts(accountsResult.value.accounts || []);
       } else {
         setAccounts([]);
 
@@ -303,9 +364,7 @@ function BankingApp() {
       }
 
       if (ledgerResult.status === "fulfilled") {
-        setTransactions(
-          ledgerResult.value.transactions || []
-        );
+        setTransactions(ledgerResult.value.transactions || []);
       } else {
         setTransactions([]);
 
@@ -335,16 +394,136 @@ function BankingApp() {
     }
   }, [token, customer, showToast]);
 
-  // Load data after login and whenever the authenticated
-  // user's relevant state changes.
   useEffect(() => {
     if (token) {
       void loadUserData().catch(() => {
-        // The error is logged and a toast is displayed
-        // by loadUserData.
+        // Error is logged and displayed by loadUserData.
       });
     }
   }, [token, loadUserData]);
+
+  // --------------------------------------------------
+  // Session activity monitoring
+  // --------------------------------------------------
+
+  useEffect(() => {
+    if (!token || viewMode !== "app" || !isCustomerReady) {
+      if (sessionWarningTimerRef.current !== null) {
+        window.clearTimeout(sessionWarningTimerRef.current);
+        sessionWarningTimerRef.current = null;
+      }
+
+      setShowSessionExpiry(false);
+      sessionWarningOpenRef.current = false;
+
+      return;
+    }
+
+    let disposed = false;
+
+    const clearWarningTimer = () => {
+      if (sessionWarningTimerRef.current !== null) {
+        window.clearTimeout(sessionWarningTimerRef.current);
+        sessionWarningTimerRef.current = null;
+      }
+    };
+
+    const scheduleWarning = () => {
+      clearWarningTimer();
+
+      if (sessionWarningOpenRef.current || disposed) {
+        return;
+      }
+
+      console.log(
+        `Session warning scheduled for ${
+          SESSION_WARNING_AFTER_MS / 1000
+        } seconds.`
+      );
+
+      sessionWarningTimerRef.current = window.setTimeout(() => {
+        if (disposed || sessionWarningOpenRef.current) {
+          return;
+        }
+
+        console.log("Session warning timer fired. Opening warning card.");
+
+        sessionWarningOpenRef.current = true;
+        setShowSessionExpiry(true);
+      }, SESSION_WARNING_AFTER_MS);
+    };
+
+    const refreshServerActivity = async () => {
+      const now = Date.now();
+
+      if (now - lastSessionPingAtRef.current < SESSION_PING_INTERVAL_MS) {
+        return;
+      }
+
+      lastSessionPingAtRef.current = now;
+
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/auth/session/keep-alive`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        if (disposed) return;
+
+        if (response.status === 401 || response.status === 403) {
+          showToast("Your session has expired. Please sign in again.");
+          handleLogout();
+        }
+      } catch (error) {
+        console.error("Session activity refresh failed:", error);
+      }
+    };
+
+    const handleUserActivity = () => {
+      if (sessionWarningOpenRef.current || disposed) {
+        return;
+      }
+
+      scheduleWarning();
+      void refreshServerActivity();
+    };
+
+    const activityEvents = [
+      "pointerdown",
+      "keydown",
+      "scroll",
+      "touchstart",
+    ] as const;
+
+    activityEvents.forEach((eventName) => {
+      window.addEventListener(eventName, handleUserActivity, {
+        passive: true,
+      });
+    });
+
+    // Start the timer when the authenticated app opens.
+    scheduleWarning();
+
+    return () => {
+      disposed = true;
+      clearWarningTimer();
+
+      activityEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, handleUserActivity);
+      });
+    };
+  }, [
+    token,
+    viewMode,
+    isCustomerReady,
+    showToast,
+    handleLogout,
+  ]);
 
   // --------------------------------------------------
   // Authentication handlers
@@ -354,6 +533,15 @@ function BankingApp() {
     newToken: string,
     newCustomer: Customer
   ) => {
+    if (sessionWarningTimerRef.current !== null) {
+      window.clearTimeout(sessionWarningTimerRef.current);
+      sessionWarningTimerRef.current = null;
+    }
+
+    sessionWarningOpenRef.current = false;
+    lastSessionPingAtRef.current = 0;
+
+    setShowSessionExpiry(false);
     setToken(newToken);
     setCustomer(newCustomer);
 
@@ -369,8 +557,8 @@ function BankingApp() {
     if (newCustomer.role === "staff") {
       setActivePage("teller");
     } else if (newCustomer.role === "management") {
-      setActivePage("management"); 
-    }  else if (newCustomer.role === "admin") {
+      setActivePage("management");
+    } else if (newCustomer.role === "admin") {
       setActivePage("overview");
     } else {
       setActivePage("overview");
@@ -378,7 +566,6 @@ function BankingApp() {
 
     setMobileMenuOpen(false);
 
-    // Clear previous-session data while the new session loads.
     setAccounts([]);
     setTransactions([]);
     setBeneficiaries([]);
@@ -388,32 +575,48 @@ function BankingApp() {
     setUnreadNotificationsCount(0);
   };
 
-  const handleLogout = () => {
-    setToken("");
-    setCustomer(null);
+  // --------------------------------------------------
+  // Session warning actions
+  // --------------------------------------------------
 
-    localStorage.removeItem("vb_token");
-    localStorage.removeItem("vb_customer");
+  const handleStayLoggedIn = async () => {
+    if (!token) {
+      handleLogout();
+      return;
+    }
 
-    setViewMode("landing");
-    setActivePage("overview");
-    setMobileMenuOpen(false);
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/auth/session/keep-alive`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
 
-    setAccounts([]);
-    setTransactions([]);
-    setBeneficiaries([]);
-    setLoans([]);
-    setFixedDeposits([]);
+      if (!response.ok) {
+        showToast("Your session has expired. Please sign in again.");
+        handleLogout();
+        return;
+      }
 
-    setNotifications([]);
-    setUnreadNotificationsCount(0);
+      lastSessionPingAtRef.current = Date.now();
+      sessionWarningOpenRef.current = false;
+      setShowSessionExpiry(false);
 
-    setActiveReceipt(null);
-    setShowStatementModal(false);
-    setDepWithModalAccount(undefined);
-    setDepWithModalMode("deposit");
+      // Start a fresh inactivity period after successful confirmation.
+      if (sessionWarningTimerRef.current !== null) {
+        window.clearTimeout(sessionWarningTimerRef.current);
+        sessionWarningTimerRef.current = null;
+      }
 
-    showToast("You have been signed out safely.");
+      showToast("Your session is still active.");
+    } catch (error) {
+      console.error("Unable to keep the session active:", error);
+      showToast("Unable to refresh your session. Please try again.");
+    }
   };
 
   // --------------------------------------------------
@@ -424,7 +627,7 @@ function BankingApp() {
     role: "customer" | "staff" | "management" | "admin"
   ) => {
     const credentials: Record<
-      "customer" | "staff" | "management" |"admin",
+      "customer" | "staff" | "management" | "admin",
       { email: string; pass: string }
     > = {
       customer: {
@@ -534,9 +737,7 @@ function BankingApp() {
         error
       );
 
-      showToast(
-        "Could not update notifications. Please try again."
-      );
+      showToast("Could not update notifications. Please try again.");
     }
   };
 
@@ -573,16 +774,12 @@ function BankingApp() {
     switch (activePage) {
       case "kyc":
         return "kyc";
-
       case "loans":
         return "loans";
-
       case "accounts":
         return "accounts";
-
       case "teller":
         return "teller";
-
       case "overview":
       default:
         return "live";
@@ -597,13 +794,10 @@ function BankingApp() {
     switch (activePage) {
       case "customers":
         return "customers";
-
       case "audit":
         return "audit";
-
       case "reports":
         return "reports";
-
       case "overview":
       default:
         return "overview";
@@ -712,9 +906,7 @@ function BankingApp() {
                   onOpenDeposit={handleOpenDeposit}
                   onOpenWithdraw={handleOpenWithdraw}
                   onOpenTransfer={handleOpenTransfer}
-                  onOpenStatement={() =>
-                    setShowStatementModal(true)
-                  }
+                  onOpenStatement={() => setShowStatementModal(true)}
                   onShowReceipt={setActiveReceipt}
                   onToast={showToast}
                 />
@@ -732,7 +924,6 @@ function BankingApp() {
                 />
               )}
 
-              {/* DEBIT CARDS */}
               {activePage === "cards" && (
                 <CardsView
                   token={token}
@@ -741,21 +932,18 @@ function BankingApp() {
                   onToast={showToast}
                 />
               )}
-        {/* CREDIT CARDS */}
-        {activePage === "credit-cards" && (
-        <CreditCardsView
-          token={token}
-          onToast={showToast}
-          />
-        )}
 
-        {/* CREDIT CARD APPLICATION */}
-        {activePage === "credit-card-application" && (
-        <CreditCardApplicationView
-        token={token}
-        onToast={showToast}
-        />
-        )}
+              {activePage === "credit-cards" && (
+                <CreditCardsView token={token} onToast={showToast} />
+              )}
+
+              {activePage === "credit-card-application" && (
+                <CreditCardApplicationView
+                  token={token}
+                  onToast={showToast}
+                />
+              )}
+
               {activePage === "transfer" && (
                 <TransferView
                   token={token}
@@ -805,18 +993,13 @@ function BankingApp() {
                   accounts={accounts}
                   transactions={transactions}
                   onShowReceipt={setActiveReceipt}
-                  onOpenStatement={() =>
-                    setShowStatementModal(true)
-                  }
+                  onOpenStatement={() => setShowStatementModal(true)}
                   onRefreshData={loadUserData}
                 />
               )}
 
               {activePage === "sessions" && (
-                <ActiveSessionsView
-                  token={token}
-                  onToast={showToast}
-                />
+                <ActiveSessionsView token={token} onToast={showToast} />
               )}
 
               {activePage === "profile" && (
@@ -854,9 +1037,7 @@ function BankingApp() {
                   accounts={accounts}
                   transactions={transactions}
                   onShowReceipt={setActiveReceipt}
-                  onOpenStatement={() =>
-                    setShowStatementModal(true)
-                  }
+                  onOpenStatement={() => setShowStatementModal(true)}
                   onRefreshData={loadUserData}
                 />
               )}
@@ -894,9 +1075,7 @@ function BankingApp() {
                   accounts={accounts}
                   transactions={transactions}
                   onShowReceipt={setActiveReceipt}
-                  onOpenStatement={() =>
-                    setShowStatementModal(true)
-                  }
+                  onOpenStatement={() => setShowStatementModal(true)}
                   onRefreshData={loadUserData}
                 />
               )}
@@ -911,49 +1090,46 @@ function BankingApp() {
               )}
             </>
           )}
-              
 
-          
-{/* MANAGEMENT PORTAL */}
-{customer.role === "management" && (
-  <>
-    {activePage === "management" && (
-      <ManagementDashboardView
-        token={token}
-        onToast={showToast}
-      />
-    )}
+          {/* MANAGEMENT PORTAL */}
+          {customer.role === "management" && (
+            <>
+              {activePage === "management" && (
+                <ManagementDashboardView
+                  token={token}
+                  onToast={showToast}
+                />
+              )}
 
-    {activePage === "transactions" && (
-      <TransactionsView
-        token={token}
-        accounts={accounts}
-        transactions={transactions}
-        onShowReceipt={setActiveReceipt}
-        onOpenStatement={() => setShowStatementModal(true)}
-        onRefreshData={loadUserData}
-      />
-    )}
+              {activePage === "transactions" && (
+                <TransactionsView
+                  token={token}
+                  accounts={accounts}
+                  transactions={transactions}
+                  onShowReceipt={setActiveReceipt}
+                  onOpenStatement={() => setShowStatementModal(true)}
+                  onRefreshData={loadUserData}
+                />
+              )}
 
-    {activePage === "profile" && (
-      <ProfileView
-        token={token}
-        customer={customer}
-        onRefreshData={loadUserData}
-        onToast={showToast}
-      />
-    )}
-  </>
-)}
+              {activePage === "profile" && (
+                <ProfileView
+                  token={token}
+                  customer={customer}
+                  onRefreshData={loadUserData}
+                  onToast={showToast}
+                />
+              )}
+            </>
+          )}
 
-{/* ADMIN PORTAL */}
-{customer.role === "admin" && activePage === "management" && (
-  <ManagementDashboardView
-    token={token}
-    onToast={showToast}
-  />
-)}
-
+          {/* Allow admins to open the management dashboard too. */}
+          {customer.role === "admin" && activePage === "management" && (
+            <ManagementDashboardView
+              token={token}
+              onToast={showToast}
+            />
+          )}
         </main>
       </div>
 
@@ -973,6 +1149,13 @@ function BankingApp() {
           onClose={() => setShowStatementModal(false)}
         />
       )}
+
+      {/* Session expiry warning */}
+      <SessionExpiryCard
+        open={showSessionExpiry}
+        onStayLoggedIn={handleStayLoggedIn}
+        onLogout={handleLogout}
+      />
 
       {/* Toast */}
       {toastMessage && (
@@ -1011,8 +1194,7 @@ export default function App() {
           path="*"
           element={<Navigate to="/" replace />}
         />
-        
-  </Routes>
+      </Routes>
     </BrowserRouter>
   );
 }

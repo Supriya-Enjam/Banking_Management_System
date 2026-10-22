@@ -25,6 +25,7 @@ interface VaultBankTokenPayload {
   sid?: string;
 }
 
+const SESSION_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 const SESSION_ACTIVITY_INTERVAL_MS = 60 * 1000;
 
 export const authenticate: RequestHandler = async (req, res, next) => {
@@ -76,11 +77,11 @@ export const authenticate: RequestHandler = async (req, res, next) => {
       typeof decoded.role !== "string" ||
       !["customer", "staff", "management", "admin"].includes(decoded.role)
     ) {
-console.warn("JWT payload validation failed:", {
-  hasSubject: typeof decoded?.sub === "string" && Boolean(decoded.sub),
-  hasSessionId: typeof decoded?.sid === "string" && Boolean(decoded.sid),
-  role: decoded?.role,
-});
+      console.warn("JWT payload validation failed:", {
+        hasSubject: typeof decoded?.sub === "string" && Boolean(decoded.sub),
+        hasSessionId: typeof decoded?.sid === "string" && Boolean(decoded.sid),
+        role: decoded?.role,
+      });
 
       res.status(401).json({
         success: false,
@@ -97,7 +98,7 @@ console.warn("JWT payload validation failed:", {
       role: decoded.role,
       revokedAt: null,
       expiresAt: { $gt: now },
-    }).select("sessionId lastActivityAt");
+    }).select("sessionId lastActivityAt createdAt");
 
     if (!activeSession) {
       res.status(401).json({
@@ -107,18 +108,21 @@ console.warn("JWT payload validation failed:", {
       return;
     }
 
-    // Refresh activity no more than once per 60 seconds.
-    const lastActivityAt = activeSession.lastActivityAt;
-    const activityCutoff = new Date(
-      now.getTime() - SESSION_ACTIVITY_INTERVAL_MS
-    );
+    // Use the last activity time, falling back to session creation time.
+    const lastActivityTime = activeSession.lastActivityAt
+      ? new Date(activeSession.lastActivityAt).getTime()
+      : activeSession.createdAt
+        ? new Date(activeSession.createdAt).getTime()
+        : 0;
 
+    const idleDuration = now.getTime() - lastActivityTime;
+
+    // Expire idle sessions before refreshing their activity timestamp.
     if (
-      lastActivityAt instanceof Date &&
-      lastActivityAt.getTime() <= activityCutoff.getTime()
+      !Number.isFinite(lastActivityTime) ||
+      lastActivityTime <= 0 ||
+      idleDuration >= SESSION_IDLE_TIMEOUT_MS
     ) {
-      // The conditional update prevents concurrent requests from
-      // repeatedly refreshing the same session at the same time.
       await Session.updateOne(
         {
           sessionId: decoded.sid,
@@ -126,7 +130,55 @@ console.warn("JWT payload validation failed:", {
           role: decoded.role,
           revokedAt: null,
           expiresAt: { $gt: now },
-          lastActivityAt: { $lte: activityCutoff },
+        },
+        {
+          $set: { expiresAt: now },
+        }
+      );
+
+      res.status(401).json({
+        success: false,
+        message:
+          "Session expired due to 15 minutes of inactivity. Please log in again.",
+      });
+      return;
+    }
+
+    // Refresh activity no more than once per 60 seconds.
+    const activityCutoff = new Date(
+      now.getTime() - SESSION_ACTIVITY_INTERVAL_MS
+    );
+
+    if (
+      activeSession.lastActivityAt &&
+      new Date(activeSession.lastActivityAt).getTime() <=
+        activityCutoff.getTime()
+    ) {
+      // Only refresh if the session is still active and its activity
+      // timestamp has not changed since it was read.
+      await Session.updateOne(
+        {
+          sessionId: decoded.sid,
+          customerId: decoded.sub,
+          role: decoded.role,
+          revokedAt: null,
+          expiresAt: { $gt: now },
+          lastActivityAt: activeSession.lastActivityAt,
+        },
+        {
+          $set: { lastActivityAt: now },
+        }
+      );
+    } else if (!activeSession.lastActivityAt) {
+      // Initialize activity for an older session with no activity timestamp.
+      await Session.updateOne(
+        {
+          sessionId: decoded.sid,
+          customerId: decoded.sub,
+          role: decoded.role,
+          revokedAt: null,
+          expiresAt: { $gt: now },
+          lastActivityAt: { $exists: false },
         },
         {
           $set: { lastActivityAt: now },
@@ -150,14 +202,9 @@ console.warn("JWT payload validation failed:", {
       return;
     }
 
-    console.warn(
-  "JWT verification failed:",
-  error instanceof Error ? error.name : "UnknownError",
-  error instanceof Error ? error.message : "Unknown error"
-);
-
-
     if (error instanceof jwt.JsonWebTokenError) {
+      console.warn("JWT verification failed:", error.name);
+
       res.status(401).json({
         success: false,
         message: "Your token is invalid. Please log in again.",
