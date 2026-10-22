@@ -9,7 +9,7 @@
 }
 
 .cc-application-eyebrow {
-  color: #6254d9;
+  color: #315f91;
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 1.6px;
@@ -39,8 +39,8 @@
   padding: 26px;
   border-radius: 20px;
   color: #fff;
-  background: linear-gradient(135deg, #24275e, #5146c8 65%, #8176ef);
-  box-shadow: 0 16px 35px rgba(43, 43, 105, 0.18);
+  background: linear-gradient(135deg, #102f55, #1d4e79 65%, #32749a);
+  box-shadow: 0 16px 35px rgba(18, 59, 109, 0.18);
 }
 
 .cc-preview-top,
@@ -159,7 +159,7 @@
   width: 17px;
   height: 17px;
   margin-top: 3px;
-  accent-color: #5146c8;
+  accent-color: #123b6d;
   flex-shrink: 0;
 }
 
@@ -169,7 +169,7 @@
   padding: 12px 18px;
   border: none;
   border-radius: 10px;
-  background: #5146c8;
+  background: #123b6d;
   color: #fff;
   font-size: 15px;
   font-weight: 700;
@@ -178,7 +178,7 @@
 }
 
 .cc-application-submit:hover:not(:disabled) {
-  background: #4035ad;
+  background: #0d2d54;
   transform: translateY(-1px);
 }
 

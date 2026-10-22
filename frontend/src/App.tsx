@@ -136,22 +136,21 @@ function BankingApp() {
   // Theme
   // --------------------------------------------------
 
-  const [theme, setTheme] = useState<Theme>(() =>
-    localStorage.getItem("vb_theme") === "dark" ? "dark" : "light"
-  );
+  const [theme, setTheme] = useState<Theme>("light");
 
-  useEffect(() => {
-    const root = document.documentElement;
+useEffect(() => {
+  const root = document.documentElement;
 
-    root.classList.toggle("dark", theme === "dark");
-    root.dataset.theme = theme;
+  root.classList.remove("dark");
+  root.dataset.theme = "light";
 
-    localStorage.setItem("vb_theme", theme);
-  }, [theme]);
+  localStorage.setItem("vb_theme", "light");
+}, []);
 
-  const toggleTheme = useCallback(() => {
-    setTheme((previous) => (previous === "dark" ? "light" : "dark"));
-  }, []);
+const toggleTheme = useCallback(() => {
+  // Keep VaultBank in the requested white-and-purple theme.
+  setTheme("light");
+}, []);
 
   // --------------------------------------------------
   // Banking data

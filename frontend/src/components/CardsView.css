@@ -1,21 +1,21 @@
 
 .vb-cards {
-  --card-primary: #635bff;
-  --card-primary-hover: #5145e5;
-  --card-border: #263248;
-  --card-muted: #94a3b8;
-  --card-text: #f1f5f9;
-  --card-surface: #111a2b;
-  --card-surface-raised: #151f32;
-  --card-green: #10b981;
-  --card-red: #f87171;
-  --card-orange: #fbbf24;
+  --card-primary: #123b6d;
+  --card-primary-hover: #0d2d54;
+  --card-border: #e2e8f0;
+  --card-muted: #64748b;
+  --card-text: #172b4d;
+  --card-surface: #ffffff;
+  --card-surface-raised: #f8fafc;
+  --card-green: #15803d;
+  --card-red: #b91c1c;
+  --card-orange: #92400e;
 
   width: 100%;
   max-width: 1500px;
   min-width: 0;
   margin: 0 auto;
-  padding: 30px 32px 40px;
+  padding: 0;
   color: var(--card-text);
   font-family: inherit;
   box-sizing: border-box;
@@ -41,7 +41,7 @@
 .vb-eyebrow {
   display: inline-block;
   margin-bottom: 10px;
-  color: #8e9cff;
+  color: #315f91;
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 1.6px;
@@ -50,7 +50,7 @@
 
 .vb-cards-header h1 {
   margin: 0;
-  color: #f8fafc;
+  color: #172b4d;
   font-size: clamp(28px, 3vw, 36px);
   font-weight: 800;
   letter-spacing: -1.1px;
@@ -95,25 +95,25 @@
 
 .vb-primary-button {
   color: #fff;
-  background: linear-gradient(135deg, #655cfb, #5145dc);
-  box-shadow: 0 5px 15px rgb(99 91 255 / 18%);
+  background: var(--card-primary);
+  box-shadow: 0 5px 15px rgb(18 59 109 / 16%);
 }
 
 .vb-primary-button:hover:not(:disabled) {
-  background: linear-gradient(135deg, #756cff, #6357ed);
-  box-shadow: 0 7px 20px rgb(99 91 255 / 28%);
+  background: var(--card-primary-hover);
+  box-shadow: 0 7px 20px rgb(18 59 109 / 22%);
   transform: translateY(-1px);
 }
 
 .vb-outline-button {
-  border-color: #344158;
-  background: #172237;
-  color: #dce5f5;
+  border-color: #cbd5e1;
+  background: #fff;
+  color: #172b4d;
 }
 
 .vb-outline-button:hover:not(:disabled) {
-  border-color: #64748b;
-  background: #202d43;
+  border-color: #9aafc6;
+  background: #f1f5f9;
 }
 
 .vb-danger-button {
@@ -131,12 +131,12 @@
   min-height: 36px;
   padding: 8px 10px;
   background: transparent;
-  color: #a5b4fc;
+  color: #123b6d;
 }
 
 .vb-text-button:hover:not(:disabled) {
-  background: rgb(99 91 255 / 10%);
-  color: #c7d2fe;
+  background: #e8eff8;
+  color: #0d2d54;
 }
 
 .vb-primary-button:disabled,
@@ -422,7 +422,7 @@
   border: 1px solid rgb(255 255 255 / 15%);
   border-radius: 16px;
   color: #fff;
-  background: linear-gradient(130deg, #172b51 0%, #344fa0 52%, #7045a5 100%);
+  background: linear-gradient(130deg, #102f55 0%, #1d4e79 58%, #32749a 100%);
   isolation: isolate;
 }
 
@@ -451,7 +451,7 @@
 }
 
 .vb-card-art-pending {
-  background: linear-gradient(130deg, #3a304d, #59417d 55%, #8461a4);
+  background: linear-gradient(130deg, #4b3d22, #806628 55%, #a5853d);
 }
 
 .vb-card-art-blocked {
@@ -1141,4 +1141,174 @@
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+.vb-cards .vb-cards-header h1,
+.vb-cards .vb-section-heading h2,
+.vb-cards .vb-empty-state h3,
+.vb-cards .vb-card-title-row h3,
+.vb-cards .vb-card-info-grid strong,
+.vb-cards .vb-modal-heading h2,
+.vb-cards .vb-modal > h2,
+.vb-cards .vb-confirm-modal h2,
+.vb-cards .vb-issued-number strong {
+  color: #172b4d;
+}
+
+.vb-cards .vb-card-stats,
+.vb-cards .vb-stat-card,
+.vb-cards .vb-debit-card-item,
+.vb-cards .vb-modal,
+.vb-cards .vb-issued-number {
+  border-color: #e2e8f0;
+  background: #fff;
+  box-shadow: 0 8px 24px rgb(18 59 109 / 7%);
+}
+
+.vb-cards .vb-stat-card:hover,
+.vb-cards .vb-debit-card-item:hover {
+  border-color: #b6cbe2;
+}
+
+.vb-cards .vb-stat-card strong {
+  color: #172b4d;
+}
+
+.vb-cards .vb-stat-purple {
+  background: #e8eff8;
+  color: #123b6d;
+}
+
+.vb-cards .vb-stat-green {
+  background: #e7f5ec;
+  color: #15803d;
+}
+
+.vb-cards .vb-stat-orange {
+  background: #fff4d8;
+  color: #92400e;
+}
+
+.vb-cards .vb-stat-red {
+  background: #fdecec;
+  color: #b91c1c;
+}
+
+.vb-cards .vb-alert-error {
+  border-color: #f1c7c7;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.vb-cards .vb-alert-success {
+  border-color: #b9dfc8;
+  background: #edf8f1;
+  color: #166534;
+}
+
+.vb-cards .vb-cards-state,
+.vb-cards .vb-empty-state {
+  border-color: #cbd9e8;
+  background: #f8fafc;
+}
+
+.vb-cards .vb-empty-icon,
+.vb-cards .vb-security-icon,
+.vb-cards .vb-issued-success {
+  border-color: #d4e0f0;
+  background: #e8eff8;
+  color: #123b6d;
+}
+
+.vb-cards .vb-empty-state > p,
+.vb-cards .vb-section-heading p,
+.vb-cards .vb-card-title-row p,
+.vb-cards .vb-card-info-grid span,
+.vb-cards .vb-security-note p,
+.vb-cards .vb-modal-description,
+.vb-cards .vb-field small {
+  color: #64748b;
+}
+
+.vb-cards .vb-status {
+  border-color: #d6e0ea;
+  background: #f8fafc;
+  color: #475569;
+}
+
+.vb-cards .vb-status-active {
+  border-color: #b9dfc8;
+  background: #edf8f1;
+  color: #166534;
+}
+
+.vb-cards .vb-status-pending {
+  border-color: #f0d79a;
+  background: #fff8e7;
+  color: #854d0e;
+}
+
+.vb-cards .vb-status-blocked {
+  border-color: #f1c7c7;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.vb-cards .vb-security-note {
+  border-color: #d4e0f0;
+  background: #f1f6fb;
+}
+
+.vb-cards .vb-modal {
+  color: #172b4d;
+}
+
+.vb-cards .vb-modal-close,
+.vb-cards .vb-field input,
+.vb-cards .vb-field select,
+.vb-cards .vb-issued-number {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: #172b4d;
+}
+
+.vb-cards .vb-field {
+  color: #334155;
+}
+
+.vb-cards .vb-field input::placeholder {
+  color: #94a3b8;
+}
+
+.vb-cards .vb-field input:focus,
+.vb-cards .vb-field select:focus {
+  border-color: #315f91;
+  box-shadow: 0 0 0 3px rgb(18 59 109 / 12%);
+}
+
+.vb-cards .vb-modal-close:hover:not(:disabled) {
+  background: #e8eff8;
+  color: #123b6d;
+}
+
+.vb-cards .vb-danger-button {
+  border-color: #f1c7c7;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.vb-cards .vb-danger-button:hover:not(:disabled) {
+  border-color: #dc2626;
+  background: #fee2e2;
+}
+
+.vb-cards .vb-empty-inline {
+  border-color: #f0d79a;
+  background: #fff8e7;
+  color: #854d0e;
+}
+
+.vb-cards .vb-text-button:hover:not(:disabled) {
+  background: #e8eff8;
+  color: #0d2d54;
 }

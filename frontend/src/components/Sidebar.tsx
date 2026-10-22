@@ -224,10 +224,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             gap: 10,
             fontWeight: 700,
             fontSize: 18,
-            color: "#fff",
+            color: "var(--brand-navy)",
           }}
         >
-          <Landmark size={20} className="text-emerald" />
+          <Landmark size={20} className="text-sapphire" />
           <span>VaultBank</span>
         </div>
 

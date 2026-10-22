@@ -162,13 +162,8 @@
   color: #ffffff;
   border: 2px solid transparent;
   border-radius: 18px;
-  background: linear-gradient(
-    125deg,
-    #272b55 0%,
-    #5148b5 55%,
-    #8a72db 100%
-  );
-  box-shadow: 0 12px 28px rgba(49, 42, 119, 0.2);
+  background: linear-gradient(125deg, #12345a 0%, #1d4e7d 58%, #32749a 100%);
+  box-shadow: 0 12px 28px rgba(18, 59, 109, 0.2);
   cursor: pointer;
   transition:
     transform 0.2s,
@@ -192,21 +187,11 @@
 }
 
 .credit-visual-card:nth-child(2n) {
-  background: linear-gradient(
-    125deg,
-    #173c49,
-    #287d83 60%,
-    #65b8a6
-  );
+  background: linear-gradient(125deg, #173d62, #28628d 60%, #5a9ab5);
 }
 
 .credit-visual-card:nth-child(3n) {
-  background: linear-gradient(
-    125deg,
-    #4b263e,
-    #8a416f 60%,
-    #c37b91
-  );
+  background: linear-gradient(125deg, #203b5c, #3c6686 60%, #7198ad);
 }
 
 .credit-visual-card:hover {
@@ -874,4 +859,259 @@
   .credit-spinner {
     animation-duration: 1.5s;
   }
+}
+
+.credit-page {
+  padding: 0;
+  color: #172b4d;
+}
+
+.credit-page-heading h1,
+.credit-section-heading h2,
+.credit-history-heading h2 {
+  color: #172b4d;
+}
+
+.credit-page-heading p,
+.credit-section-heading p,
+.credit-history-heading p {
+  color: #64748b;
+}
+
+.credit-eyebrow {
+  color: #315f91 !important;
+}
+
+.credit-button-primary {
+  border-color: #123b6d;
+  background: #123b6d;
+}
+
+.credit-button-primary:hover:not(:disabled) {
+  background: #0d2d54;
+}
+
+.credit-button-secondary {
+  border-color: #cbd5e1;
+  background: #fff;
+  color: #172b4d;
+}
+
+.credit-button-secondary:hover:not(:disabled) {
+  border-color: #9aafc6;
+  background: #f1f5f9;
+}
+
+.credit-button-danger {
+  border-color: #f1c7c7;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.credit-button-danger:hover:not(:disabled) {
+  background: #fee2e2;
+}
+
+.credit-button:focus-visible,
+.credit-visual-card:focus-visible {
+  outline-color: #315f91;
+}
+
+.credit-visual-card-selected {
+  border-color: #c2d8ee;
+  box-shadow: 0 0 0 3px rgb(18 59 109 / 16%), 0 12px 28px rgb(18 59 109 / 18%);
+}
+
+.credit-card-number {
+  max-width: 100%;
+  min-height: 32px;
+  padding-right: 76px;
+  font-size: clamp(16px, 2vw, 21px);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.credit-status {
+  top: 65px;
+  right: 18px;
+  max-width: calc(100% - 36px);
+  white-space: nowrap;
+}
+
+.credit-summary-card,
+.credit-details-panel,
+.credit-history-panel,
+.credit-action-panel {
+  border-color: #e2e8f0;
+  background: #fff;
+  color: #172b4d;
+  box-shadow: 0 8px 24px rgb(18 59 109 / 7%);
+}
+
+.credit-summary-card:hover {
+  border-color: #b6cbe2;
+  background: #fff;
+}
+
+.credit-summary-card > span,
+.credit-summary-card small,
+.credit-details-grid span,
+.credit-action-panel p {
+  color: #64748b;
+}
+
+.credit-summary-card strong,
+.credit-details-panel h3,
+.credit-details-grid strong,
+.credit-action-panel h2 {
+  color: #172b4d;
+}
+
+.credit-summary-outstanding {
+  border-top-color: #c48b22;
+}
+
+.credit-summary-available {
+  border-top-color: #16804a;
+}
+
+.credit-form-field {
+  color: #334155;
+}
+
+.credit-form-field input,
+.credit-form-field select,
+.credit-filter {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: #172b4d;
+}
+
+.credit-form-field input::placeholder {
+  color: #94a3b8;
+}
+
+.credit-form-field select option,
+.credit-filter option {
+  background: #fff;
+  color: #172b4d;
+}
+
+.credit-form-field input:focus,
+.credit-form-field select:focus,
+.credit-filter:focus-visible {
+  border-color: #315f91;
+  box-shadow: 0 0 0 3px rgb(18 59 109 / 12%);
+}
+
+.credit-form-field input:disabled,
+.credit-form-field select:disabled {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.credit-form-note {
+  color: #64748b !important;
+}
+
+.credit-table-wrapper {
+  border-color: #e2e8f0;
+}
+
+.credit-table {
+  background: #fff;
+  color: #172b4d;
+}
+
+.credit-table th {
+  border-bottom-color: #e2e8f0;
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.credit-table td {
+  border-bottom-color: #edf1f5;
+  color: #334155;
+}
+
+.credit-table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.credit-transaction-title strong,
+.credit-merchant {
+  color: #172b4d;
+}
+
+.credit-transaction-title small,
+.credit-description,
+.credit-date {
+  color: #64748b;
+}
+
+.credit-icon-purchase {
+  color: #a34a3c;
+  background: #fbefec;
+}
+
+.credit-icon-repayment {
+  color: #16804a;
+  background: #e7f5ec;
+}
+
+.credit-transaction-completed {
+  color: #166534;
+  background: #edf8f1;
+}
+
+.credit-transaction-pending {
+  color: #854d0e;
+  background: #fff8e7;
+}
+
+.credit-transaction-failed {
+  color: #991b1b;
+  background: #fef2f2;
+}
+
+.credit-amount {
+  color: #a34a3c;
+}
+
+.credit-amount-positive {
+  color: #16804a;
+}
+
+.credit-empty,
+.credit-history-empty,
+.credit-error {
+  border-color: #cbd9e8;
+  background: #f8fafc;
+  color: #475569;
+}
+
+.credit-empty h2,
+.credit-history-empty h3,
+.credit-error strong {
+  color: #172b4d;
+}
+
+.credit-empty p,
+.credit-history-empty p,
+.credit-error p {
+  color: #64748b;
+}
+
+.credit-empty-icon {
+  background: #e8eff8;
+  color: #123b6d;
+}
+
+.credit-loading {
+  color: #475569;
+}
+
+.credit-spinner {
+  border-color: #d5dfeb;
+  border-top-color: #123b6d;
 }
