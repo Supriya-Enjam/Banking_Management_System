@@ -33,8 +33,11 @@ import CreditCardsView from "./components/CreditCardsView";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsAndConditions from "./pages/TermsAndConditions";
 
+import { CookieConsent } from "./components/CookieConsent";
+
 import {
   api,
+  ApiError,
   type Customer,
   type BankAccount,
   type BankTransaction,
@@ -50,7 +53,7 @@ import "./App.css";
 // Types
 // --------------------------------------------------
 
-type ViewMode = "landing" | "auth" | "app";
+type ViewMode = "checking" | "landing" | "auth" | "app";
 type DepositMode = "deposit" | "withdraw";
 type Theme = "light" | "dark";
 
@@ -71,7 +74,9 @@ type AdminInitialTab =
 // Session configuration
 // --------------------------------------------------
 
-const API_BASE_URL = "http://localhost:5000/api";
+const API_BASE_URL = (
+  import.meta.env.VITE_API_URL || "http://localhost:5000/api"
+).replace(/\/+$/, "");
 
 // TESTING: Show the warning after 30 seconds of inactivity.
 // Change to 13 * 60 * 1000 after testing.
@@ -94,9 +99,9 @@ function BankingApp() {
 
   const [showSessionExpiry, setShowSessionExpiry] = useState(false);
 
-  const [token, setToken] = useState<string>(
-    () => localStorage.getItem("vb_token") || ""
-  );
+  // This marker only gates authenticated UI; authentication is held in an
+  // HTTP-only cookie and is never exposed to JavaScript.
+  const [token, setToken] = useState("");
 
   const [customer, setCustomer] = useState<Customer | null>(() => {
     const saved = localStorage.getItem("vb_customer");
@@ -111,15 +116,42 @@ function BankingApp() {
     }
   });
 
-  const [viewMode, setViewMode] = useState<ViewMode>(() =>
-    localStorage.getItem("vb_token") ? "app" : "landing"
-  );
+  const [viewMode, setViewMode] = useState<ViewMode>("checking");
 
   const [authIsRegister, setAuthIsRegister] = useState(false);
 
   const sessionWarningTimerRef = useRef<number | null>(null);
   const lastSessionPingAtRef = useRef(0);
   const sessionWarningOpenRef = useRef(false);
+
+  useEffect(() => {
+    let active = true;
+    localStorage.removeItem("vb_token");
+
+    void api
+      .getMe("")
+      .then((response) => {
+        if (!active) return;
+        setCustomer(response.customer);
+        setToken("cookie-session");
+        localStorage.setItem(
+          "vb_customer",
+          JSON.stringify(response.customer)
+        );
+        setViewMode("app");
+      })
+      .catch(() => {
+        if (!active) return;
+        setToken("");
+        setCustomer(null);
+        localStorage.removeItem("vb_customer");
+        setViewMode("landing");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // IMPORTANT:
   // This boolean remains stable when the customer object is refreshed.
@@ -229,57 +261,49 @@ const toggleTheme = useCallback(() => {
   // Logout
   // --------------------------------------------------
 
-  const handleLogout = useCallback(() => {
-    const currentToken = localStorage.getItem("vb_token");
-
-    // Revoke the server session in the background.
-    // Local logout must work even if the server is unavailable.
-    if (currentToken) {
-      void fetch(`${API_BASE_URL}/auth/logout`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${currentToken}`,
-        },
-      }).catch((error) => {
+  const handleLogout = useCallback(
+    (message = "You have been signed out safely.") => {
+      void api.logout().catch((error: unknown) => {
         console.error("Backend logout request failed:", error);
       });
-    }
 
-    if (sessionWarningTimerRef.current !== null) {
-      window.clearTimeout(sessionWarningTimerRef.current);
-      sessionWarningTimerRef.current = null;
-    }
+      if (sessionWarningTimerRef.current !== null) {
+        window.clearTimeout(sessionWarningTimerRef.current);
+        sessionWarningTimerRef.current = null;
+      }
 
-    sessionWarningOpenRef.current = false;
-    lastSessionPingAtRef.current = 0;
+      sessionWarningOpenRef.current = false;
+      lastSessionPingAtRef.current = 0;
 
-    setShowSessionExpiry(false);
-    setToken("");
-    setCustomer(null);
+      setShowSessionExpiry(false);
+      setToken("");
+      setCustomer(null);
 
-    localStorage.removeItem("vb_token");
-    localStorage.removeItem("vb_customer");
+      localStorage.removeItem("vb_token");
+      localStorage.removeItem("vb_customer");
 
-    setViewMode("landing");
-    setActivePage("overview");
-    setMobileMenuOpen(false);
+      setViewMode("landing");
+      setActivePage("overview");
+      setMobileMenuOpen(false);
 
-    setAccounts([]);
-    setTransactions([]);
-    setBeneficiaries([]);
-    setLoans([]);
-    setFixedDeposits([]);
+      setAccounts([]);
+      setTransactions([]);
+      setBeneficiaries([]);
+      setLoans([]);
+      setFixedDeposits([]);
 
-    setNotifications([]);
-    setUnreadNotificationsCount(0);
+      setNotifications([]);
+      setUnreadNotificationsCount(0);
 
-    setActiveReceipt(null);
-    setShowStatementModal(false);
-    setDepWithModalAccount(undefined);
-    setDepWithModalMode("deposit");
+      setActiveReceipt(null);
+      setShowStatementModal(false);
+      setDepWithModalAccount(undefined);
+      setDepWithModalMode("deposit");
 
-    showToast("You have been signed out safely.");
-  }, [showToast]);
+      showToast(message);
+    },
+    [showToast]
+  );
 
   // --------------------------------------------------
   // Load banking and notification data
@@ -289,7 +313,17 @@ const toggleTheme = useCallback(() => {
     if (!token) return;
 
     try {
-      const profileResponse = await api.getMe(token).catch(() => null);
+      let profileResponse;
+
+      try {
+        profileResponse = await api.getMe(token);
+      } catch (error: unknown) {
+        if (error instanceof ApiError && error.status === 401) {
+          handleLogout("Your session has expired. Please sign in again.");
+          return;
+        }
+        throw error;
+      }
 
       const currentCustomer: Customer | null =
         profileResponse?.customer ?? customer;
@@ -391,7 +425,7 @@ const toggleTheme = useCallback(() => {
 
       throw error;
     }
-  }, [token, customer, showToast]);
+  }, [token, customer, showToast, handleLogout]);
 
   useEffect(() => {
     if (token) {
@@ -466,9 +500,7 @@ const toggleTheme = useCallback(() => {
           `${API_BASE_URL}/auth/session/keep-alive`,
           {
             method: "POST",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
+            credentials: "include",
           }
         );
 
@@ -528,10 +560,7 @@ const toggleTheme = useCallback(() => {
   // Authentication handlers
   // --------------------------------------------------
 
-  const handleLoginSuccess = (
-    newToken: string,
-    newCustomer: Customer
-  ) => {
+  const handleLoginSuccess = (newCustomer: Customer) => {
     if (sessionWarningTimerRef.current !== null) {
       window.clearTimeout(sessionWarningTimerRef.current);
       sessionWarningTimerRef.current = null;
@@ -541,10 +570,8 @@ const toggleTheme = useCallback(() => {
     lastSessionPingAtRef.current = 0;
 
     setShowSessionExpiry(false);
-    setToken(newToken);
+    setToken("cookie-session");
     setCustomer(newCustomer);
-
-    localStorage.setItem("vb_token", newToken);
 
     localStorage.setItem(
       "vb_customer",
@@ -589,9 +616,7 @@ const toggleTheme = useCallback(() => {
         `${API_BASE_URL}/auth/session/keep-alive`,
         {
           method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          credentials: "include",
         }
       );
 
@@ -653,7 +678,7 @@ const toggleTheme = useCallback(() => {
         credentials[role].pass
       );
 
-      if (!("token" in response) || !("customer" in response)) {
+      if (!("customer" in response)) {
         setAuthIsRegister(false);
         setViewMode("auth");
 
@@ -664,7 +689,7 @@ const toggleTheme = useCallback(() => {
         return;
       }
 
-      handleLoginSuccess(response.token, response.customer);
+      handleLoginSuccess(response.customer);
 
       showToast(
         `Switched persona to ${response.customer.name} (${response.customer.role}).`
@@ -685,7 +710,7 @@ const toggleTheme = useCallback(() => {
     try {
       const response = await api.login(email, password);
 
-      if (!("token" in response) || !("customer" in response)) {
+      if (!("customer" in response)) {
         setAuthIsRegister(false);
         setViewMode("auth");
 
@@ -696,7 +721,7 @@ const toggleTheme = useCallback(() => {
         return;
       }
 
-      handleLoginSuccess(response.token, response.customer);
+      handleLoginSuccess(response.customer);
 
       showToast(
         `Welcome, ${response.customer.name} (${response.customer.role}).`
@@ -806,6 +831,14 @@ const toggleTheme = useCallback(() => {
   // --------------------------------------------------
   // Landing page
   // --------------------------------------------------
+
+  if (viewMode === "checking") {
+    return (
+      <main className="auth-loading-screen" role="status" aria-live="polite">
+        Checking your VaultBank session…
+      </main>
+    );
+  }
 
   if (viewMode === "landing") {
     return (
@@ -1007,6 +1040,9 @@ const toggleTheme = useCallback(() => {
                   customer={customer}
                   onRefreshData={loadUserData}
                   onToast={showToast}
+                  onLogout={() =>
+                    handleLogout("Password updated. Please sign in again.")
+                  }
                 />
               )}
             </>
@@ -1047,6 +1083,9 @@ const toggleTheme = useCallback(() => {
                   customer={customer}
                   onRefreshData={loadUserData}
                   onToast={showToast}
+                  onLogout={() =>
+                    handleLogout("Password updated. Please sign in again.")
+                  }
                 />
               )}
             </>
@@ -1085,6 +1124,9 @@ const toggleTheme = useCallback(() => {
                   customer={customer}
                   onRefreshData={loadUserData}
                   onToast={showToast}
+                  onLogout={() =>
+                    handleLogout("Password updated. Please sign in again.")
+                  }
                 />
               )}
             </>
@@ -1117,6 +1159,9 @@ const toggleTheme = useCallback(() => {
                   customer={customer}
                   onRefreshData={loadUserData}
                   onToast={showToast}
+                  onLogout={() =>
+                    handleLogout("Password updated. Please sign in again.")
+                  }
                 />
               )}
             </>
@@ -1194,6 +1239,11 @@ export default function App() {
           element={<Navigate to="/" replace />}
         />
       </Routes>
+       {/* Cookie Consent banner */}
+
+      <CookieConsent />
     </BrowserRouter>
   );
+
+
 }

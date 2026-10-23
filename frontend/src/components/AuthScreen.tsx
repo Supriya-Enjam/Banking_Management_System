@@ -27,7 +27,7 @@ import { api, type Customer } from "../services/api";
 
 interface AuthScreenProps {
   initialRegister?: boolean;
-  onLoginSuccess: (token: string, customer: Customer) => void;
+  onLoginSuccess: (customer: Customer) => void;
   onBackToLanding?: () => void;
   onToast: (msg: string) => void;
 }
@@ -44,7 +44,6 @@ interface AuthChallengeResponse {
 interface AuthSuccessResponse {
   success: boolean;
   requiresTwoFactor?: false;
-  token: string;
   expiresIn: number;
   customer: Customer;
 }
@@ -62,7 +61,6 @@ const isAuthSuccess = (
 ): response is AuthSuccessResponse =>
   response.success === true &&
   response.requiresTwoFactor !== true &&
-  Boolean(response.token) &&
   Boolean(response.customer);
 
 const AuthScreen: React.FC<AuthScreenProps> = ({
@@ -124,7 +122,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({
 
     if (isAuthSuccess(response)) {
       onToast(`Welcome to VaultBank, ${response.customer.name}!`);
-      onLoginSuccess(response.token, response.customer);
+      onLoginSuccess(response.customer);
       return;
     }
 
@@ -298,16 +296,16 @@ const AuthScreen: React.FC<AuthScreenProps> = ({
     try {
       const response = await api.verifyLoginOtp(challengeId, normalizedOtp);
 
-      if (!response.success || !response.token || !response.customer) {
+      if (!response.success || !response.customer) {
         throw new Error("Verification failed. Please check your code and try again.");
       }
 
-      // Only now do we pass the VaultBank JWT to the app.
+      // The backend sets its HTTP-only authentication cookie after OTP succeeds.
       setOtpStep(false);
       setChallengeId("");
       setOtp("");
       onToast(`Welcome to VaultBank, ${response.customer.name}!`);
-      onLoginSuccess(response.token, response.customer);
+      onLoginSuccess(response.customer);
     } catch (err: unknown) {
       setError(
         err instanceof Error

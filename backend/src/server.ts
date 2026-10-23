@@ -15,17 +15,69 @@ import { adminRoutes } from "./routes/adminRoutes";
 import { staffRoutes } from "./routes/staffRoutes";
 import debitCardRoutes from "./routes/debitCardRoutes";
 import creditCardRoutes from "./routes/creditCardRoutes";
+import cookieParser from "cookie-parser";
+import { AUTH_COOKIE_NAME } from "./utils/authCookie";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 5000;
 
 app.use(helmet());
+
+const configuredFrontendOrigins = process.env.FRONTEND_URL?.trim();
+
+if (process.env.NODE_ENV === "production" && !configuredFrontendOrigins) {
+  throw new Error("FRONTEND_URL must be set for production deployments.");
+}
+
+const allowedOrigins = new Set(
+  (configuredFrontendOrigins || "http://localhost:5173")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+);
+
+if (allowedOrigins.size === 0) {
+  throw new Error("Configure at least one frontend origin in FRONTEND_URL.");
+}
+
 app.use(
   cors({
-    origin: "*", // Allow local dev clients
+    origin: [...allowedOrigins],
+    credentials: true,
   })
 );
+
+app.use(cookieParser());
+
+app.use((req, res, next) => {
+  const origin = req.get("origin");
+  const isStateChangingRequest = !["GET", "HEAD", "OPTIONS"].includes(
+    req.method
+  );
+  const hasAuthenticationCookie =
+    typeof req.cookies?.[AUTH_COOKIE_NAME] === "string";
+
+  if (origin && !allowedOrigins.has(origin)) {
+    res.status(403).json({
+      success: false,
+      message: "Request origin is not allowed.",
+    });
+    return;
+  }
+
+  if (isStateChangingRequest && hasAuthenticationCookie && !origin) {
+    res.status(403).json({
+      success: false,
+      message: "A valid request origin is required for this operation.",
+    });
+    return;
+  }
+
+  next();
+});
+
 app.use(express.json({ limit: "50kb" }));
+
 
 // Route handlers
 app.use("/api/auth", authRoutes);

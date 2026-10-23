@@ -17,12 +17,17 @@ import authenticate from "../middleware/authenticate";
 import { firebaseAdminAuth } from "../config/firebaseAdmin";
 import { logAudit, sendNotification } from "../utils/auditAndNotify";
 import { sendLoginOtp } from "../services/emailService";
+import {
+  AUTH_COOKIE_NAME,
+  SESSION_DURATION_MS,
+  authCookieOptions,
+  clearAuthCookie,
+} from "../utils/authCookie";
 
 const authRoutes = Router();
 
 const OTP_EXPIRY_MS = 5 * 60 * 1000;
 const MAX_OTP_ATTEMPTS = 5;
-const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
 
 const DEMO_STAFF_EMAIL = "staff@vaultbank.com";
 const DEMO_MANAGEMENT_EMAIL = "management@vaultbank.com";
@@ -122,7 +127,7 @@ const createVaultBankToken = (
     },
     getJwtSecret(),
     {
-      expiresIn: "24h",
+      expiresIn: SESSION_DURATION_MS / 1000,
       issuer: "vaultbank-api",
       audience: "vaultbank-client",
       algorithm: "HS256",
@@ -609,10 +614,11 @@ authRoutes.post(
         severity: "info",
       });
 
+      res.cookie(AUTH_COOKIE_NAME, token, authCookieOptions);
+
       res.status(200).json({
         success: true,
         message: "Two-factor verification successful.",
-        token,
         expiresIn: Math.floor(SESSION_DURATION_MS / 1000),
         customer: customerResponse(customer),
       });
@@ -776,6 +782,8 @@ authRoutes.post(
         severity: "info",
       });
 
+      clearAuthCookie(res);
+
       res.status(200).json({
         success: true,
         requiresTwoFactor: true,
@@ -837,6 +845,7 @@ authRoutes.get(
       );
 
       if (!customer || customer.status !== "active") {
+        clearAuthCookie(res);
         res.status(401).json({
           success: false,
           message: "Customer account is unavailable or suspended.",
@@ -1014,6 +1023,8 @@ authRoutes.put(
         { $set: { revokedAt: new Date() } }
       );
 
+      clearAuthCookie(res);
+
       await logAudit({
         userId: customer._id.toString(),
         userName: customer.name,
@@ -1105,42 +1116,51 @@ authRoutes.post(
 
 authRoutes.post(
   "/logout",
-  authenticate,
-  async (_req: Request, res: Response): Promise<void> => {
+  async (req: Request, res: Response): Promise<void> => {
     try {
-      const user = res.locals.authenticatedUser as
-        | {
-            customerId: string;
-            role: string;
-            sessionId?: string;
+      const cookieToken = req.cookies?.[AUTH_COOKIE_NAME];
+      const authorization = req.get("authorization");
+      const bearerToken = authorization?.startsWith("Bearer ")
+        ? authorization.slice(7).trim()
+        : "";
+      const token =
+        typeof cookieToken === "string" && cookieToken
+          ? cookieToken
+          : bearerToken;
+
+      if (token) {
+        try {
+          const decoded = jwt.verify(token, getJwtSecret(), {
+            issuer: "vaultbank-api",
+            audience: "vaultbank-client",
+            algorithms: ["HS256"],
+          }) as {
+            sub?: unknown;
+            role?: unknown;
+            sid?: unknown;
+          };
+
+          if (
+            typeof decoded.sub === "string" &&
+            typeof decoded.sid === "string" &&
+            typeof decoded.role === "string" &&
+            ["customer", "staff", "management", "admin"].includes(decoded.role)
+          ) {
+            await Session.updateOne(
+              {
+                sessionId: decoded.sid,
+                customerId: decoded.sub,
+                role: decoded.role,
+                revokedAt: null,
+              },
+              { $set: { revokedAt: new Date() } }
+            );
           }
-        | undefined;
-
-      if (!user?.sessionId) {
-        res.status(401).json({
-          success: false,
-          message: "No active session was found.",
-        });
-        return;
-      }
-
-      const session = await Session.findOneAndUpdate(
-        {
-          sessionId: user.sessionId,
-          customerId: user.customerId,
-          revokedAt: null,
-          expiresAt: { $gt: new Date() },
-        },
-        { $set: { revokedAt: new Date() } },
-        { new: true }
-      );
-
-      if (!session) {
-        res.status(401).json({
-          success: false,
-          message: "This session is already revoked or expired.",
-        });
-        return;
+        } catch (error: unknown) {
+          if (!(error instanceof jwt.JsonWebTokenError)) {
+            throw error;
+          }
+        }
       }
 
       res.status(200).json({
@@ -1148,6 +1168,7 @@ authRoutes.post(
         message: "Logged out successfully.",
       });
     } catch (error: unknown) {
+      clearAuthCookie(res);
       console.error("Logout error:", error);
       res.status(500).json({
         success: false,

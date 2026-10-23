@@ -1,5 +1,7 @@
 
-const API_BASE_URL = "http://localhost:5000/api";
+const API_BASE_URL = (
+  import.meta.env.VITE_API_URL || "http://localhost:5000/api"
+).replace(/\/+$/, "");
 
 // =========================================================
 // TYPES
@@ -348,7 +350,6 @@ export interface AuthChallengeResponse {
 export interface AuthSuccessResponse {
   success: true;
   requiresTwoFactor?: false;
-  token: string;
   expiresIn: number;
   customer: Customer;
 }
@@ -364,16 +365,30 @@ export interface ApiMessageResponse {
 // COMMON API REQUEST HELPER
 // =========================================================
 
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(
+    message: string,
+    status: number
+  ) {
+    super(message);
+    this.status = status;
+    this.name = "ApiError";
+  }
+}
+
+// Legacy token args remain temporarily for call-site compatibility and are never transmitted.
 async function request<T>(
   path: string,
   options: RequestInit = {},
-  token?: string
+  _legacyToken?: string
 ): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
     },
   });
@@ -385,10 +400,11 @@ async function request<T>(
   };
 
   if (!response.ok || data.success === false) {
-    throw new Error(
+    throw new ApiError(
       typeof data.message === "string"
         ? data.message
-        : `Request failed with status ${response.status}`
+        : `Request failed with status ${response.status}`,
+      response.status
     );
   }
 
@@ -439,6 +455,12 @@ export const api = {
     return request<AuthSuccessResponse>("/auth/verify-login-otp", {
       method: "POST",
       body: JSON.stringify({ challengeId, otp }),
+    });
+  },
+
+  logout() {
+    return request<ApiMessageResponse>("/auth/logout", {
+      method: "POST",
     });
   },
 
@@ -1310,16 +1332,10 @@ export const api = {
     );
   },
 
-  /**
-   * EventSource cannot attach a custom Authorization header.
-   * The backend must explicitly support token query parameters.
-   * Avoid query-token authentication unless the endpoint requires it,
-   * because URLs may be recorded in logs and browser history.
-   */
-  createLiveStream(token: string): EventSource {
-    return new EventSource(
-      `${API_BASE_URL}/staff/live-stream?token=${encodeURIComponent(token)}`
-    );
+  createLiveStream(_legacyToken?: string): EventSource {
+    return new EventSource(`${API_BASE_URL}/staff/live-stream`, {
+      withCredentials: true,
+    });
   },
 
   getStaffCustomers(
@@ -1355,7 +1371,5 @@ export const api = {
       employees: StaffEmployee[];
     }>("/staff/employees", {}, token);
   },
-
-
 
 };

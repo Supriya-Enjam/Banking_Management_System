@@ -7,6 +7,7 @@ interface ProfileViewProps {
   customer: Customer;
   onRefreshData: () => Promise<void>;
   onToast: (msg: string) => void;
+  onLogout: () => void;
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
@@ -14,6 +15,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   customer,
   onRefreshData,
   onToast,
+  onLogout,
 }) => {
   // Profile update form
   const [name, setName] = useState(customer.name);
@@ -65,11 +67,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     setChangingPassword(true);
     try {
       await api.changePassword(token, { currentPassword, newPassword });
-      onToast("Account password changed successfully!");
-      setPassSuccess("Password updated successfully.");
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
+      onLogout();
     } catch (err: any) {
       setPassError(err.message || "Failed to update password.");
     } finally {

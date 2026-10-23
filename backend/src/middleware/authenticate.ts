@@ -1,7 +1,7 @@
-
 import type { RequestHandler } from "express";
 import jwt from "jsonwebtoken";
 import { Session } from "../models/Session";
+import { AUTH_COOKIE_NAME, clearAuthCookie } from "../utils/authCookie";
 
 export type UserRole = "customer" | "staff" | "management" | "admin";
 
@@ -23,24 +23,28 @@ interface VaultBankTokenPayload {
   sub?: string;
   role?: string;
   sid?: string;
+  exp?: number;
 }
 
 const SESSION_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 const SESSION_ACTIVITY_INTERVAL_MS = 60 * 1000;
+const allowedRoles: UserRole[] = [
+  "customer",
+  "staff",
+  "management",
+  "admin",
+];
 
 export const authenticate: RequestHandler = async (req, res, next) => {
-  let token = "";
   const authorization = req.headers.authorization;
-
-  if (authorization?.startsWith("Bearer ")) {
-    token = authorization.slice(7).trim();
-  } else if (
-    typeof req.query.token === "string" &&
-    req.query.token.trim()
-  ) {
-    // Temporary compatibility for existing download endpoints.
-    token = req.query.token.trim();
-  }
+  const bearerToken = authorization?.startsWith("Bearer ")
+    ? authorization.slice(7).trim()
+    : "";
+  const cookieToken =
+    typeof req.cookies?.[AUTH_COOKIE_NAME] === "string"
+      ? req.cookies[AUTH_COOKIE_NAME]
+      : "";
+  const token = cookieToken || bearerToken;
 
   if (!token) {
     res.status(401).json({
@@ -75,8 +79,10 @@ export const authenticate: RequestHandler = async (req, res, next) => {
       typeof decoded.sid !== "string" ||
       !decoded.sid ||
       typeof decoded.role !== "string" ||
-      !["customer", "staff", "management", "admin"].includes(decoded.role)
+      typeof decoded.exp !== "number" ||
+      !allowedRoles.includes(decoded.role as UserRole)
     ) {
+      if (cookieToken) clearAuthCookie(res);
       console.warn("JWT payload validation failed:", {
         hasSubject: typeof decoded?.sub === "string" && Boolean(decoded.sub),
         hasSessionId: typeof decoded?.sid === "string" && Boolean(decoded.sid),
@@ -91,7 +97,6 @@ export const authenticate: RequestHandler = async (req, res, next) => {
     }
 
     const now = new Date();
-
     const activeSession = await Session.findOne({
       sessionId: decoded.sid,
       customerId: decoded.sub,
@@ -101,6 +106,7 @@ export const authenticate: RequestHandler = async (req, res, next) => {
     }).select("sessionId lastActivityAt createdAt");
 
     if (!activeSession) {
+      if (cookieToken) clearAuthCookie(res);
       res.status(401).json({
         success: false,
         message: "Your session is expired or revoked. Please log in again.",
@@ -108,16 +114,13 @@ export const authenticate: RequestHandler = async (req, res, next) => {
       return;
     }
 
-    // Use the last activity time, falling back to session creation time.
     const lastActivityTime = activeSession.lastActivityAt
       ? new Date(activeSession.lastActivityAt).getTime()
       : activeSession.createdAt
         ? new Date(activeSession.createdAt).getTime()
         : 0;
-
     const idleDuration = now.getTime() - lastActivityTime;
 
-    // Expire idle sessions before refreshing their activity timestamp.
     if (
       !Number.isFinite(lastActivityTime) ||
       lastActivityTime <= 0 ||
@@ -131,11 +134,10 @@ export const authenticate: RequestHandler = async (req, res, next) => {
           revokedAt: null,
           expiresAt: { $gt: now },
         },
-        {
-          $set: { expiresAt: now },
-        }
+        { $set: { expiresAt: now } }
       );
 
+      if (cookieToken) clearAuthCookie(res);
       res.status(401).json({
         success: false,
         message:
@@ -144,7 +146,6 @@ export const authenticate: RequestHandler = async (req, res, next) => {
       return;
     }
 
-    // Refresh activity no more than once per 60 seconds.
     const activityCutoff = new Date(
       now.getTime() - SESSION_ACTIVITY_INTERVAL_MS
     );
@@ -154,8 +155,6 @@ export const authenticate: RequestHandler = async (req, res, next) => {
       new Date(activeSession.lastActivityAt).getTime() <=
         activityCutoff.getTime()
     ) {
-      // Only refresh if the session is still active and its activity
-      // timestamp has not changed since it was read.
       await Session.updateOne(
         {
           sessionId: decoded.sid,
@@ -165,12 +164,9 @@ export const authenticate: RequestHandler = async (req, res, next) => {
           expiresAt: { $gt: now },
           lastActivityAt: activeSession.lastActivityAt,
         },
-        {
-          $set: { lastActivityAt: now },
-        }
+        { $set: { lastActivityAt: now } }
       );
     } else if (!activeSession.lastActivityAt) {
-      // Initialize activity for an older session with no activity timestamp.
       await Session.updateOne(
         {
           sessionId: decoded.sid,
@@ -180,9 +176,7 @@ export const authenticate: RequestHandler = async (req, res, next) => {
           expiresAt: { $gt: now },
           lastActivityAt: { $exists: false },
         },
-        {
-          $set: { lastActivityAt: now },
-        }
+        { $set: { lastActivityAt: now } }
       );
     }
 
@@ -195,6 +189,7 @@ export const authenticate: RequestHandler = async (req, res, next) => {
     next();
   } catch (error: unknown) {
     if (error instanceof jwt.TokenExpiredError) {
+      if (cookieToken) clearAuthCookie(res);
       res.status(401).json({
         success: false,
         message: "Your token has expired. Please log in again.",
@@ -203,8 +198,8 @@ export const authenticate: RequestHandler = async (req, res, next) => {
     }
 
     if (error instanceof jwt.JsonWebTokenError) {
+      if (cookieToken) clearAuthCookie(res);
       console.warn("JWT verification failed:", error.name);
-
       res.status(401).json({
         success: false,
         message: "Your token is invalid. Please log in again.",
@@ -213,7 +208,6 @@ export const authenticate: RequestHandler = async (req, res, next) => {
     }
 
     console.error("Authentication/session validation failed:", error);
-
     res.status(500).json({
       success: false,
       message: "Unable to validate your session. Please try again.",
@@ -222,7 +216,7 @@ export const authenticate: RequestHandler = async (req, res, next) => {
 };
 
 export const requireRoles = (
-  ...allowedRoles: UserRole[]
+  ...roles: UserRole[]
 ): RequestHandler => {
   return (_req, res, next) => {
     const user = res.locals.authenticatedUser;
@@ -235,7 +229,7 @@ export const requireRoles = (
       return;
     }
 
-    if (!allowedRoles.includes(user.role)) {
+    if (!roles.includes(user.role)) {
       res.status(403).json({
         success: false,
         message: `Forbidden: You do not have permission (${user.role}) to access this resource.`,

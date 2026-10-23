@@ -115,3 +115,42 @@ npm install
 npm run dev
 ```
 The frontend application will be live at `http://localhost:5173`.
+
+## 🔐 Authentication Cookies
+
+VaultBank creates the HTTP-only `vaultbank_token` cookie only after email OTP
+verification succeeds and the corresponding database session has been stored.
+The cookie is sent automatically with API requests; frontend JavaScript does
+not read or persist the VaultBank JWT. Cookie consent preferences remain
+separate from this essential authentication cookie.
+
+### Local HTTP development
+
+Configure the backend environment (keep secrets in your local environment,
+never in source control):
+
+```text
+NODE_ENV=development
+FRONTEND_URL=http://localhost:5173
+AUTH_COOKIE_SAME_SITE=lax
+```
+
+The frontend defaults to `http://localhost:5000/api`. To use a different API
+address, set `VITE_API_URL` in the frontend environment, including the `/api`
+suffix, for example `http://localhost:5000/api`.
+
+### Production deployment
+
+- Set `NODE_ENV=production`, and set `FRONTEND_URL` to the exact HTTPS frontend
+  origin (multiple comma-separated origins are supported when needed).
+- Set the frontend `VITE_API_URL` to the HTTPS API base URL, ending in `/api`.
+- Keep the frontend and API on the same site where possible and use
+  `AUTH_COOKIE_SAME_SITE=lax`. If they must be cross-site, set
+  `AUTH_COOKIE_SAME_SITE=none`; this is accepted only in production, where the
+  cookie is automatically marked `Secure`.
+- Keep `JWT_SECRET` and other backend secrets server-side. Do not add the JWT
+  to frontend storage or URLs.
+
+The API uses credentialed CORS for the configured frontend origin and validates
+request origins on state-changing operations. Authenticated browser requests
+must include their Origin header.

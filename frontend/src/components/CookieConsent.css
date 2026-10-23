@@ -1,0 +1,340 @@
+
+.vb-cookie-banner,
+.vb-cookie-banner *,
+.vb-cookie-overlay *,
+.vb-cookie-overlay *::before,
+.vb-cookie-overlay *::after {
+  box-sizing: border-box;
+}
+
+.vb-cookie-banner {
+  position: fixed;
+  z-index: 10000;
+  left: 24px;
+  right: 24px;
+  bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 54px 20px 20px;
+  color: #e2e8f0;
+  background: #0b1424;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 18px;
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.38);
+  font-family: inherit;
+}
+
+.vb-cookie-icon {
+  display: grid;
+  flex: 0 0 46px;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(52, 211, 153, 0.2);
+  border-radius: 14px;
+}
+
+.vb-cookie-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.vb-cookie-copy h2,
+.vb-cookie-dialog h2 {
+  margin: 0 0 7px;
+  color: #f8fafc;
+  font-size: 17px;
+  font-weight: 750;
+}
+
+.vb-cookie-copy p,
+.vb-cookie-dialog-description {
+  margin: 0;
+  color: #b6c2d2;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.vb-cookie-text-button {
+  margin-top: 7px;
+  padding: 0;
+  border: 0;
+  color: #6ee7b7;
+  background: transparent;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.vb-cookie-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.vb-cookie-button {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 10px 13px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.vb-cookie-button:focus-visible,
+.vb-cookie-close:focus-visible,
+.vb-cookie-text-button:focus-visible,
+.vb-cookie-dialog-close:focus-visible {
+  outline: 3px solid #6ee7b7;
+  outline-offset: 3px;
+}
+
+.vb-cookie-settings,
+.vb-cookie-reject {
+  color: #e2e8f0;
+  background: #172438;
+  border-color: #334155;
+}
+
+.vb-cookie-settings:hover,
+.vb-cookie-reject:hover {
+  background: #24344b;
+}
+
+.vb-cookie-accept {
+  color: #052e22;
+  background: #34d399;
+}
+
+.vb-cookie-accept:hover {
+  background: #6ee7b7;
+}
+
+.vb-cookie-close,
+.vb-cookie-dialog-close {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  color: #94a3b8;
+  background: transparent;
+  cursor: pointer;
+}
+
+.vb-cookie-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+.vb-cookie-close:hover,
+.vb-cookie-dialog-close:hover {
+  color: #fff;
+  background: #24344b;
+}
+
+.vb-cookie-overlay {
+  position: fixed;
+  z-index: 10001;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(2, 6, 23, 0.76);
+  backdrop-filter: blur(5px);
+}
+
+.vb-cookie-dialog {
+  width: min(100%, 520px);
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  padding: 26px;
+  color: #e2e8f0;
+  background: #0b1424;
+  border: 1px solid #334155;
+  border-radius: 20px;
+  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.5);
+}
+
+.vb-cookie-dialog-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.vb-cookie-eyebrow {
+  display: block;
+  margin-bottom: 9px;
+  color: #34d399;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+}
+
+.vb-cookie-dialog h2 {
+  font-size: 22px;
+}
+
+.vb-cookie-dialog-description {
+  margin: 6px 0 20px;
+  font-size: 13px;
+}
+
+.vb-cookie-category {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 17px 0;
+  border-top: 1px solid #263449;
+}
+
+.vb-cookie-category h3 {
+  margin: 0 0 5px;
+  color: #f8fafc;
+  font-size: 14px;
+}
+
+.vb-cookie-category p {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.vb-cookie-always-on {
+  flex-shrink: 0;
+  color: #6ee7b7;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.vb-cookie-toggle {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.vb-cookie-toggle input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.vb-cookie-toggle-track {
+  width: 42px;
+  height: 24px;
+  border-radius: 999px;
+  background: #475569;
+  transition: background 0.2s ease;
+}
+
+.vb-cookie-toggle-track::after {
+  content: "";
+  display: block;
+  width: 18px;
+  height: 18px;
+  margin: 3px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.2s ease;
+}
+
+.vb-cookie-toggle input:checked + .vb-cookie-toggle-track {
+  background: #059669;
+}
+
+.vb-cookie-toggle input:checked + .vb-cookie-toggle-track::after {
+  transform: translateX(18px);
+}
+
+.vb-cookie-toggle input:focus-visible + .vb-cookie-toggle-track {
+  outline: 3px solid #6ee7b7;
+  outline-offset: 3px;
+}
+
+.vb-cookie-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+@media (max-width: 900px) {
+  .vb-cookie-banner {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .vb-cookie-copy {
+    flex: 1 1 calc(100% - 70px);
+  }
+
+  .vb-cookie-actions {
+    width: 100%;
+    padding-left: 62px;
+  }
+}
+
+@media (max-width: 540px) {
+  .vb-cookie-banner {
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    gap: 11px;
+    padding: 16px 38px 16px 14px;
+    border-radius: 15px;
+  }
+
+  .vb-cookie-icon {
+    flex-basis: 38px;
+    width: 38px;
+    height: 38px;
+  }
+
+  .vb-cookie-copy h2 {
+    font-size: 15px;
+  }
+
+  .vb-cookie-copy p {
+    font-size: 11px;
+  }
+
+  .vb-cookie-actions {
+    padding-left: 0;
+    justify-content: stretch;
+  }
+
+  .vb-cookie-actions .vb-cookie-button {
+    flex: 1 1 auto;
+    padding: 10px 8px;
+    font-size: 11px;
+  }
+
+  .vb-cookie-dialog {
+    padding: 20px;
+  }
+
+  .vb-cookie-dialog-actions .vb-cookie-button {
+    flex: 1 1 100%;
+  }
+}
