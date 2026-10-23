@@ -421,7 +421,7 @@ async function request<T>(
 }
 
 
-
+export type AccountOpeningStatus = "pending" | "approved" | "rejected";
 
 export type AccountOpeningDocumentType =
   | "identity"
@@ -455,7 +455,7 @@ export interface AccountOpeningApplication {
   updatedAt: string;
 }
 
-export type AccountOpeningStatus = "pending" | "approved" | "rejected";
+
 
 export interface StaffAccountOpeningApplication {
   id: string;
@@ -502,42 +502,6 @@ export const api = {
     }>("/auth/demo-users");
   },
 
-
-  getStaffAccountOpeningApplications(
-  token: string,
-  status: AccountOpeningStatus = "pending"
-) {
-  return request<{
-    success: boolean;
-    count: number;
-    applications: StaffAccountOpeningApplication[];
-  }>(
-    `/staff/account-opening?status=${status}`,
-    {},
-    token
-  );
-},
-
-reviewAccountOpeningApplication(
-  token: string,
-  applicationId: string,
-  decision: "approved" | "rejected",
-  remarks: string
-) {
-  return request<{
-    success: boolean;
-    message: string;
-    application?: StaffAccountOpeningApplication;
-    account?: BankAccount;
-  }>(
-    `/staff/account-opening/${applicationId}/review`,
-    {
-      method: "PATCH",
-      body: JSON.stringify({ decision, remarks }),
-    },
-    token
-  );
-},
   // -------------------------------------------------------
   // AUTHENTICATION
   // -------------------------------------------------------
@@ -742,6 +706,42 @@ reviewAccountOpeningApplication(
       applications: AccountOpeningApplication[];
     }>("/account-opening", {}, token);
   },
+
+getStaffAccountOpeningApplications(
+  token: string,
+  status: "pending" | "approved" | "rejected" = "pending"
+) {
+  return request<{
+    success: boolean;
+    count: number;
+    applications: StaffAccountOpeningApplication[];
+  }>(
+    `/staff/account-opening?status=${status}`,
+    {},
+    token
+  );
+},
+
+reviewAccountOpeningApplication(
+  token: string,
+  applicationId: string,
+  decision: "approved" | "rejected",
+  remarks: string
+) {
+  return request<{
+    success: boolean;
+    message: string;
+    application?: StaffAccountOpeningApplication;
+    account?: BankAccount;
+  }>(
+    `/staff/account-opening/${applicationId}/review`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ decision, remarks }),
+    },
+    token
+  );
+},
 
 
   // -------------------------------------------------------

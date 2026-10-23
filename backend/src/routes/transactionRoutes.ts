@@ -654,10 +654,10 @@ transactionRoutes.post(
             404,
             "Active account not found or access denied."
           );
-        }
+        } 
 
         const todayDebits = await getTodayDebitsPaise(account._id, session);
-        const dailyLimit = account.dailyLimitPaise || 5_000_000;
+        const dailyLimit = account.dailyLimitPaise ?? 5_000_000;
 
         if (todayDebits + amountPaise > dailyLimit) {
           throw new RouteError(400, "Daily transaction limit exceeded.");
@@ -834,18 +834,25 @@ transactionRoutes.post(
         }
 
         const todayDebits = await getTodayDebitsPaise(sender._id, session);
-        const dailyLimit = sender.dailyLimitPaise || 5_000_000;
+        const dailyLimit = sender.dailyLimitPaise ?? 5_000_000;
 
         if (todayDebits + amountPaise > dailyLimit) {
           throw new RouteError(400, "Daily transfer limit exceeded.");
         }
 
         const recipient = await BankAccount.findOne({
-          accountNumber: recipientAccountNumber,
-          status: "active",
-        }).session(session);
+        accountNumber: recipientAccountNumber,
+        status: "active",
+      }).session(session);
 
-        let recipientName = "External Payee";
+      if (!recipient) {
+        throw new RouteError(
+        404,
+        "Recipient account not found or inactive."
+  );
+}
+
+let recipientName = "VaultBank Customer";
 
         if (recipient) {
           if (String(recipient._id) === String(sender._id)) {
@@ -1262,7 +1269,7 @@ transactionRoutes.post(
           0
         );
 
-        const accountDailyLimit = account.dailyLimitPaise || 5_000_000;
+        const accountDailyLimit = account.dailyLimitPaise ?? 5_000_000;
 
         if (todayDebitsPaise + amountPaise > accountDailyLimit) {
           throw new RouteError(

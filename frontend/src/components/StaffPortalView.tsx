@@ -333,6 +333,8 @@ const [openingReviewNotes, setOpeningReviewNotes] = useState<
   Record<string, string>
 >({});
 
+
+
   // Credit card application review
   const [creditCardApplications, setCreditCardApplications] = useState<
     CreditCardApplication[]
