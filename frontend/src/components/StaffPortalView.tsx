@@ -36,6 +36,7 @@ import {
   api,
   type StaffMetrics,
   type CreditCardApplication,
+  type StaffAccountOpeningApplication,
 } from "../services/api";
 
 type StaffTab =
@@ -45,7 +46,8 @@ type StaffTab =
   | "loans"
   | "accounts"
   | "customers"
-  | "credit-cards";
+  | "credit-cards"
+  |"account-opening";
 
 interface StaffPortalViewProps {
   token: string;
@@ -321,6 +323,16 @@ export const StaffPortalView: React.FC<StaffPortalViewProps> = ({
     {}
   );
 
+  const [accountOpeningApplications, setAccountOpeningApplications] =
+  useState<StaffAccountOpeningApplication[]>([]);
+const [loadingAccountOpening, setLoadingAccountOpening] = useState(false);
+const [reviewingOpeningId, setReviewingOpeningId] = useState<string | null>(
+  null
+);
+const [openingReviewNotes, setOpeningReviewNotes] = useState<
+  Record<string, string>
+>({});
+
   // Credit card application review
   const [creditCardApplications, setCreditCardApplications] = useState<
     CreditCardApplication[]
@@ -419,12 +431,41 @@ export const StaffPortalView: React.FC<StaffPortalViewProps> = ({
     }
   }, [token, onToast]);
 
+  const loadAccountOpeningApplications = useCallback(async () => {
+  if (!token) return;
+
+  setLoadingAccountOpening(true);
+
+  try {
+    const response = await api.getStaffAccountOpeningApplications(
+      token,
+      "pending"
+    );
+
+    setAccountOpeningApplications(response.applications ?? []);
+  } catch (error: unknown) {
+    onToast(
+      error instanceof Error
+        ? error.message
+        : "Failed to load account-opening applications."
+    );
+  } finally {
+    setLoadingAccountOpening(false);
+  }
+}, [token, onToast]);
+
   // Load applications whenever the Credit Cards tab becomes active.
   useEffect(() => {
     if (activeTab === "credit-cards") {
       void loadCreditCardApplications();
     }
   }, [activeTab, loadCreditCardApplications]);
+
+  useEffect(() => {
+  if (activeTab === "account-opening") {
+    void loadAccountOpeningApplications();
+  }
+}, [activeTab, loadAccountOpeningApplications]);
 
   // Open the live activity stream. Any previous stream is closed first.
   const connectSSE = useCallback(() => {
@@ -743,6 +784,62 @@ export const StaffPortalView: React.FC<StaffPortalViewProps> = ({
       setReviewingCardId(null);
     }
   };
+
+const handleReviewAccountOpening = async (
+  application: StaffAccountOpeningApplication,
+  decision: "approved" | "rejected"
+) => {
+  const remarks = (openingReviewNotes[application.id] || "").trim();
+
+  if (decision === "rejected" && !remarks) {
+    onToast("Enter a reason before rejecting this application.");
+    return;
+  }
+
+  const customerName = application.customer?.name || "this customer";
+
+  if (
+    !window.confirm(
+      `Are you sure you want to ${decision} the account-opening application for ${customerName}?`
+    )
+  ) {
+    return;
+  }
+
+  setReviewingOpeningId(application.id);
+
+  try {
+    await api.reviewAccountOpeningApplication(
+      token,
+      application.id,
+      decision,
+      remarks
+    );
+
+    onToast(
+      decision === "approved"
+        ? "Application approved. The account-opening review is complete."
+        : "Application rejected successfully."
+    );
+
+    setOpeningReviewNotes((previous) => {
+      const next = { ...previous };
+      delete next[application.id];
+      return next;
+    });
+
+    await loadAccountOpeningApplications();
+    await loadStaffData();
+  } catch (error: unknown) {
+    onToast(
+      error instanceof Error
+        ? error.message
+        : "Failed to review the account-opening application."
+    );
+  } finally {
+    setReviewingOpeningId(null);
+  }
+};
 
   // Freeze or activate an account.
   const handleToggleAccountFreeze = async (account: any) => {
@@ -1077,6 +1174,7 @@ export const StaffPortalView: React.FC<StaffPortalViewProps> = ({
               icon: FileCheck,
             },
             { id: "credit-cards", label: `Credit Cards (${pendingCreditCardsCount})`, icon: CreditCard },
+            { id: "account-opening", label: "Account Opening", icon: Landmark, },
             { id: "accounts", label: "Accounts", icon: Landmark },
             { id: "customers", label: "Customers", icon: Users },
           ] as const
@@ -2080,6 +2178,346 @@ export const StaffPortalView: React.FC<StaffPortalViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Account opening application review queue */}
+{activeTab === "account-opening" && (
+  <div className="card-panel" style={{ padding: 0 }}>
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 12,
+        flexWrap: "wrap",
+        padding: "18px 20px",
+        borderBottom: "1px solid var(--border-subtle)",
+      }}
+    >
+      <div>
+        <h2
+          style={{
+            margin: 0,
+            fontSize: 18,
+            color: "var(--text-main)",
+          }}
+        >
+          Account Opening Applications
+        </h2>
+        <p
+          style={{
+            margin: "6px 0 0",
+            fontSize: 13,
+            color: "var(--text-muted)",
+          }}
+        >
+          Review customer details, uploaded documents, and account requests.
+        </p>
+      </div>
+
+      <button
+        type="button"
+        className="btn btn-secondary"
+        onClick={() => void loadAccountOpeningApplications()}
+        disabled={loadingAccountOpening}
+      >
+        <RefreshCw
+          size={15}
+          className={loadingAccountOpening ? "spin" : ""}
+        />
+        Refresh Applications
+      </button>
+    </div>
+
+    <div style={{ padding: 20 }}>
+      {loadingAccountOpening && accountOpeningApplications.length === 0 ? (
+        <div
+          style={{
+            textAlign: "center",
+            padding: 32,
+            color: "var(--text-muted)",
+          }}
+        >
+          Loading account-opening applications...
+        </div>
+      ) : accountOpeningApplications.length === 0 ? (
+        <div
+          style={{
+            textAlign: "center",
+            padding: "44px 20px",
+            color: "var(--text-muted)",
+          }}
+        >
+          <Landmark
+            size={36}
+            style={{
+              opacity: 0.35,
+              display: "block",
+              margin: "0 auto 12px",
+            }}
+          />
+          <h3
+            style={{
+              color: "var(--text-main)",
+              fontSize: 16,
+              margin: "0 0 8px",
+            }}
+          >
+            No pending account applications
+          </h3>
+          <p style={{ margin: 0, fontSize: 13 }}>
+            New customer applications will appear here when submitted.
+          </p>
+        </div>
+      ) : (
+        <div style={{ display: "grid", gap: 18 }}>
+          {accountOpeningApplications.map((application) => {
+            const isReviewing = reviewingOpeningId === application.id;
+            const accountType =
+              application.requestedAccountType || application.accountType;
+
+            return (
+              <div
+                key={application.id}
+                style={{
+                  border: "1px solid var(--border-subtle)",
+                  borderRadius: 12,
+                  padding: 18,
+                  background: "var(--surface-1)",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    gap: 12,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <div>
+                    <h3
+                      style={{
+                        margin: "0 0 5px",
+                        color: "var(--text-main)",
+                        fontSize: 16,
+                      }}
+                    >
+                      {application.customer?.name || "Customer"}
+                    </h3>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        color: "var(--text-muted)",
+                      }}
+                    >
+                      {application.customer?.email || "Email unavailable"}
+                    </div>
+                  </div>
+
+                  <span className="status-pill pending">Pending</span>
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+                    gap: 12,
+                    marginTop: 18,
+                  }}
+                >
+                  <div>
+                    <div className="stat-label">Account Type</div>
+                    <div
+                      style={{
+                        marginTop: 5,
+                        fontWeight: 700,
+                        color: "var(--text-main)",
+                        textTransform: "capitalize",
+                      }}
+                    >
+                      {accountType}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="stat-label">Opening Deposit</div>
+                    <div
+                      style={{
+                        marginTop: 5,
+                        fontWeight: 700,
+                        color: "var(--text-main)",
+                      }}
+                    >
+                      {formatRupeesFromPaise(
+                        application.initialDepositPaise
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="stat-label">Application Date</div>
+                    <div
+                      style={{
+                        marginTop: 5,
+                        color: "var(--text-main)",
+                      }}
+                    >
+                      {application.createdAt
+                        ? new Date(application.createdAt).toLocaleDateString(
+                            "en-IN"
+                          )
+                        : "—"}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 18 }}>
+                  <div
+                    style={{
+                      fontWeight: 700,
+                      fontSize: 13,
+                      color: "var(--text-main)",
+                      marginBottom: 10,
+                    }}
+                  >
+                    Uploaded Documents ({application.documents?.length || 0})
+                  </div>
+
+                  {application.documents?.length ? (
+                    <div style={{ display: "grid", gap: 8 }}>
+                      {application.documents.map((document) => (
+                        <div
+                          key={document.id}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: 10,
+                            flexWrap: "wrap",
+                            padding: "10px 12px",
+                            borderRadius: 8,
+                            border: "1px solid var(--border-subtle)",
+                          }}
+                        >
+                          <div style={{ minWidth: 0 }}>
+                            <div
+                              style={{
+                                fontSize: 13,
+                                fontWeight: 600,
+                                color: "var(--text-main)",
+                                overflowWrap: "anywhere",
+                              }}
+                            >
+                              {document.originalName}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: 11,
+                                color: "var(--text-muted)",
+                                marginTop: 3,
+                                textTransform: "capitalize",
+                              }}
+                            >
+                              {document.documentType.replace(/_/g, " ")}
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-secondary"
+                            onClick={() =>
+                              window.open(
+                                `http://localhost:5000/api/staff/account-opening/${encodeURIComponent(
+                                  application.id
+                                )}/documents/${encodeURIComponent(
+                                  document.id
+                                )}`,
+                                "_blank",
+                                "noopener,noreferrer"
+                              )
+                            }
+                          >
+                            View Document
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p style={{ fontSize: 13, color: "var(--text-muted)" }}>
+                      No document metadata was returned for this application.
+                    </p>
+                  )}
+                </div>
+
+                <div style={{ marginTop: 18 }}>
+                  <label
+                    className="form-label"
+                    htmlFor={`opening-remarks-${application.id}`}
+                  >
+                    Review Remarks
+                  </label>
+                  <textarea
+                    id={`opening-remarks-${application.id}`}
+                    value={openingReviewNotes[application.id] || ""}
+                    onChange={(event) =>
+                      setOpeningReviewNotes((previous) => ({
+                        ...previous,
+                        [application.id]: event.target.value,
+                      }))
+                    }
+                    placeholder="Enter verification notes or a rejection reason..."
+                    rows={3}
+                    disabled={isReviewing}
+                    style={{
+                      width: "100%",
+                      resize: "vertical",
+                      boxSizing: "border-box",
+                    }}
+                  />
+                </div>
+
+                <div
+                  className="staff-review-actions"
+                  style={{ marginTop: 14 }}
+                >
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    disabled={isReviewing}
+                    onClick={() =>
+                      void handleReviewAccountOpening(
+                        application,
+                        "approved"
+                      )
+                    }
+                  >
+                    <CheckCircle size={14} />
+                    {isReviewing ? "Processing..." : "Approve Application"}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn btn-danger"
+                    disabled={isReviewing}
+                    onClick={() =>
+                      void handleReviewAccountOpening(
+                        application,
+                        "rejected"
+                      )
+                    }
+                  >
+                    <XCircle size={14} />
+                    Reject Application
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  </div>
+)}
 
       {/* Accounts directory */}
       {activeTab === "accounts" && (

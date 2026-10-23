@@ -379,18 +379,27 @@ export class ApiError extends Error {
 }
 
 // Legacy token args remain temporarily for call-site compatibility and are never transmitted.
+
+
+  
 async function request<T>(
   path: string,
   options: RequestInit = {},
   _legacyToken?: string
 ): Promise<T> {
+  const headers = new Headers(options.headers);
+
+  if (options.body instanceof FormData) {
+    // The browser sets the multipart boundary automatically.
+    headers.delete("Content-Type");
+  } else if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
+    headers,
   });
 
   const data = (await response.json().catch(() => ({}))) as {
@@ -411,6 +420,66 @@ async function request<T>(
   return data as T;
 }
 
+
+
+
+export type AccountOpeningDocumentType =
+  | "identity"
+  | "address"
+  | "photo"
+  | "business_registration";
+
+export interface AccountOpeningDocument {
+  id: string;
+  documentType: AccountOpeningDocumentType;
+  originalName: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
+export interface AccountOpeningApplication {
+  id: string;
+  customer?: {
+    id: string;
+    name: string;
+    email: string;
+  };
+  accountType: "savings" | "current" | "business";
+  initialDepositPaise: number;
+  status: AccountOpeningStatus;
+  reviewRemarks: string;
+  reviewedAt: string | null;
+  accountId: string | null;
+  documents: AccountOpeningDocument[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type AccountOpeningStatus = "pending" | "approved" | "rejected";
+
+export interface StaffAccountOpeningApplication {
+  id: string;
+  customerId: string;
+  accountType: "savings" | "current" | "business";
+  requestedAccountType?: "savings" | "current" | "business";
+  initialDepositPaise: number;
+  status: AccountOpeningStatus;
+  reviewRemarks?: string;
+  createdAt: string;
+  reviewedAt?: string | null;
+  accountId?: string | null;
+  customer?: {
+    name?: string;
+    email?: string;
+  };
+  documents: Array<{
+    id: string;
+    documentType: string;
+    originalName: string;
+    mimeType: string;
+    sizeBytes: number;
+  }>;
+}
 // =========================================================
 // API METHODS
 // =========================================================
@@ -433,6 +502,42 @@ export const api = {
     }>("/auth/demo-users");
   },
 
+
+  getStaffAccountOpeningApplications(
+  token: string,
+  status: AccountOpeningStatus = "pending"
+) {
+  return request<{
+    success: boolean;
+    count: number;
+    applications: StaffAccountOpeningApplication[];
+  }>(
+    `/staff/account-opening?status=${status}`,
+    {},
+    token
+  );
+},
+
+reviewAccountOpeningApplication(
+  token: string,
+  applicationId: string,
+  decision: "approved" | "rejected",
+  remarks: string
+) {
+  return request<{
+    success: boolean;
+    message: string;
+    application?: StaffAccountOpeningApplication;
+    account?: BankAccount;
+  }>(
+    `/staff/account-opening/${applicationId}/review`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ decision, remarks }),
+    },
+    token
+  );
+},
   // -------------------------------------------------------
   // AUTHENTICATION
   // -------------------------------------------------------
@@ -585,6 +690,59 @@ export const api = {
       token
     );
   },
+
+  
+  // -------------------------------------------------------
+  // ACCOUNT-OPENING APPLICATIONS
+  // -------------------------------------------------------
+
+  submitAccountOpeningApplication(
+    token: string,
+    data: {
+      accountType: "savings" | "current" | "business";
+      initialDeposit: number;
+      documents: Array<{
+        documentType: AccountOpeningDocumentType;
+        file: File;
+      }>;
+    }
+  ) {
+    const formData = new FormData();
+
+    formData.append("accountType", data.accountType);
+    formData.append("initialDeposit", String(data.initialDeposit));
+
+    formData.append(
+      "documentTypes",
+      JSON.stringify(data.documents.map((document) => document.documentType))
+    );
+
+    data.documents.forEach(({ file }) => {
+      formData.append("documents", file);
+    });
+
+    return request<{
+      success: boolean;
+      message: string;
+      application: AccountOpeningApplication;
+    }>(
+      "/account-opening",
+      {
+        method: "POST",
+        body: formData,
+      },
+      token
+    );
+  },
+
+  getAccountOpeningApplications(token: string) {
+    return request<{
+      success: boolean;
+      count: number;
+      applications: AccountOpeningApplication[];
+    }>("/account-opening", {}, token);
+  },
+
 
   // -------------------------------------------------------
   // DEBIT CARDS

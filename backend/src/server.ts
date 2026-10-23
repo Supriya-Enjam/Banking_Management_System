@@ -18,6 +18,9 @@ import creditCardRoutes from "./routes/creditCardRoutes";
 import cookieParser from "cookie-parser";
 import { AUTH_COOKIE_NAME } from "./utils/authCookie";
 
+import accountOpeningRoutes from "./routes/accountOpeningRoutes";
+import staffAccountOpeningRoutes from "./routes/staffAccountOpeningRoutes";
+
 const app = express();
 const PORT = Number(process.env.PORT) || 5000;
 
@@ -89,8 +92,10 @@ app.use("/api/fixed-deposits", fixedDepositRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/staff", staffRoutes);
+app.use("/api/staff/account-opening", staffAccountOpeningRoutes);
 app.use("/api/cards/debit", debitCardRoutes);
 app.use("/api/cards/credit", creditCardRoutes);
+app.use("/api/account-opening", accountOpeningRoutes);
 
 app.get("/", (_req: Request, res: Response) => {
   res.json({

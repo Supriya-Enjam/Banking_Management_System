@@ -139,3 +139,134 @@ export async function sendLoginOtp(
     throw new Error("Failed to send login verification email.");
   }
 }
+
+
+
+export async function sendAccountOpenedEmail(
+  recipientEmail: string,
+  customerName: string,
+  accountDetails: {
+    accountNumber: string;
+    accountType: string;
+    balancePaise: number;
+    openingDate: Date;
+  }
+): Promise<void> {
+  if (!smtpHost || !smtpUser || !smtpPass) {
+    throw new Error(
+      "Email service is not configured. Check SMTP settings in backend/.env."
+    );
+  }
+
+  if (!recipientEmail || !recipientEmail.trim()) {
+    throw new Error("Recipient email is required.");
+  }
+
+  // Escape user-controlled text before placing it in HTML.
+  const escapeHtml = (value: string): string =>
+    value.replace(/[&<>"']/g, (character) => {
+      const entities: Record<string, string> = {
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      };
+      return entities[character];
+    });
+
+  const safeName = escapeHtml(customerName || "Customer");
+  const safeAccountNumber = escapeHtml(accountDetails.accountNumber);
+  const safeAccountType = escapeHtml(accountDetails.accountType);
+  const formattedDate = accountDetails.openingDate.toLocaleDateString(
+    "en-IN",
+    {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+      timeZone: "Asia/Kolkata",
+    }
+  );
+
+  const openingDeposit = (accountDetails.balancePaise / 100).toLocaleString(
+    "en-IN",
+    {
+      style: "currency",
+      currency: "INR",
+    }
+  );
+
+  const mailOptions = {
+    from: `"VaultBank" <${smtpUser}>`,
+    to: recipientEmail,
+    subject: "Your VaultBank account is now open",
+    text: [
+      `Hello ${customerName || "Customer"},`,
+      "",
+      "Your VaultBank account-opening application has been approved.",
+      "",
+      `Account type: ${accountDetails.accountType}`,
+      `Account number: ${accountDetails.accountNumber}`,
+      `Opening date: ${formattedDate}`,
+      `Opening deposit: ${openingDeposit}`,
+      "",
+      "Please keep your account details secure.",
+      "Thank you for choosing VaultBank.",
+      "",
+      "VaultBank Team",
+    ].join("\n"),
+    html: `
+      <!DOCTYPE html>
+      <html lang="en">
+        <head>
+          <meta charset="UTF-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+          <title>Your VaultBank Account</title>
+        </head>
+        <body style="margin:0;padding:24px;background:#f3f4f6;font-family:Arial,Helvetica,sans-serif;">
+          <div style="max-width:520px;margin:0 auto;padding:28px;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;">
+            <h1 style="margin:0;color:#059669;text-align:center;">VaultBank</h1>
+            <p style="text-align:center;color:#6b7280;">Secure Banking</p>
+            <h2 style="color:#111827;">Your account is open!</h2>
+            <p style="color:#4b5563;line-height:1.6;">
+              Hello ${safeName}, your account-opening application has been approved.
+              Your new bank account is ready.
+            </p>
+            <div style="padding:20px;background:#ecfdf5;border-radius:8px;">
+              <p style="margin:8px 0;color:#065f46;">
+                <strong>Account type:</strong> ${safeAccountType}
+              </p>
+              <p style="margin:8px 0;color:#065f46;">
+                <strong>Account number:</strong> ${safeAccountNumber}
+              </p>
+              <p style="margin:8px 0;color:#065f46;">
+                <strong>Opening date:</strong> ${formattedDate}
+              </p>
+              <p style="margin:8px 0;color:#065f46;">
+                <strong>Opening deposit:</strong> ${openingDeposit}
+              </p>
+            </div>
+            <p style="color:#4b5563;line-height:1.6;">
+              Keep your account details secure. If you have questions, please contact
+              your bank through its official support channel.
+            </p>
+            <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;" />
+            <p style="text-align:center;color:#9ca3af;font-size:12px;">
+              VaultBank Team
+            </p>
+          </div>
+        </body>
+      </html>
+    `,
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    console.info(
+      `VaultBank account-opening email sent to ${recipientEmail}.`
+    );
+  } catch (error) {
+    console.error("VaultBank account-opening email failed:", error);
+    throw new Error("Failed to send account-opening confirmation email.");
+  }
+}
