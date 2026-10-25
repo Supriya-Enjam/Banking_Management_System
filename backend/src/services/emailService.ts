@@ -270,3 +270,116 @@ export async function sendAccountOpenedEmail(
     throw new Error("Failed to send account-opening confirmation email.");
   }
 }
+
+
+
+export async function sendLoanDecisionEmail(
+  recipientEmail: string,
+  customerName: string,
+  loanDetails: {
+    loanType: string;
+    amountPaise: number;
+    status: "approved" | "rejected";
+    reviewNotes: string;
+    tenureMonths: number;
+    emiPaise: number;
+  }
+): Promise<void> {
+  if (!smtpHost || !smtpUser || !smtpPass) {
+    throw new Error(
+      "Email service is not configured. Check SMTP settings in backend/.env."
+    );
+  }
+
+  if (!recipientEmail?.trim()) {
+    throw new Error("Recipient email is required.");
+  }
+
+  const escapeHtml = (value: string): string =>
+    value.replace(/[&<>"']/g, (character) => {
+      const entities: Record<string, string> = {
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      };
+      return entities[character];
+    });
+
+  const safeName = escapeHtml(customerName || "Customer");
+  const safeLoanType = escapeHtml(loanDetails.loanType);
+  const safeNotes = escapeHtml(loanDetails.reviewNotes);
+  const approved = loanDetails.status === "approved";
+
+  const amount = (loanDetails.amountPaise / 100).toLocaleString(
+    "en-IN",
+    { style: "currency", currency: "INR" }
+  );
+
+  const emi = (loanDetails.emiPaise / 100).toLocaleString(
+    "en-IN",
+    { style: "currency", currency: "INR" }
+  );
+
+  const decision = approved ? "Approved" : "Rejected";
+
+  const text = [
+    `Hello ${customerName || "Customer"},`,
+    "",
+    `Your VaultBank ${loanDetails.loanType} loan application has been ${decision.toLowerCase()}.`,
+    "",
+    `Loan amount: ${amount}`,
+    `Loan tenure: ${loanDetails.tenureMonths} months`,
+    ...(approved ? [`Monthly EMI: ${emi}`] : []),
+    `Review remarks: ${loanDetails.reviewNotes}`,
+    "",
+    "Thank you for choosing VaultBank.",
+    "VaultBank Team",
+  ].join("\n");
+
+  const mailOptions = {
+    from: `"VaultBank" <${smtpUser}>`,
+    to: recipientEmail,
+    subject: `VaultBank Loan Application ${decision}`,
+    text,
+    html: `
+      <!DOCTYPE html>
+      <html lang="en">
+        <head>
+          <meta charset="UTF-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+          <title>Loan Application ${decision}</title>
+        </head>
+        <body style="margin:0;padding:24px;background:#f3f4f6;font-family:Arial,Helvetica,sans-serif;">
+          <div style="max-width:520px;margin:0 auto;padding:28px;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;">
+            <h1 style="margin:0;color:#059669;text-align:center;">VaultBank</h1>
+            <p style="text-align:center;color:#6b7280;">Secure Banking</p>
+            <h2 style="color:${approved ? "#059669" : "#dc2626"};">
+              Loan Application ${decision}
+            </h2>
+            <p style="color:#4b5563;line-height:1.6;">
+              Hello ${safeName}, your ${safeLoanType.toLowerCase()} loan application
+              has been ${decision.toLowerCase()} by our bank review team.
+            </p>
+            <div style="padding:20px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;">
+              <p style="color:#374151;"><strong>Loan type:</strong> ${safeLoanType}</p>
+              <p style="color:#374151;"><strong>Loan amount:</strong> ${amount}</p>
+              <p style="color:#374151;"><strong>Tenure:</strong> ${loanDetails.tenureMonths} months</p>
+              ${approved ? `<p style="color:#374151;"><strong>Monthly EMI:</strong> ${emi}</p>` : ""}
+              <p style="color:#374151;"><strong>Review remarks:</strong> ${safeNotes}</p>
+            </div>
+            <p style="color:#6b7280;font-size:13px;line-height:1.6;">
+              If you have questions, please contact your bank through its official support channel.
+            </p>
+            <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0;" />
+            <p style="text-align:center;color:#9ca3af;font-size:12px;">VaultBank Team</p>
+          </div>
+        </body>
+      </html>
+    `,
+  };
+
+  await transporter.sendMail(mailOptions);
+  console.info(`VaultBank loan decision email sent to ${recipientEmail}.`);
+}

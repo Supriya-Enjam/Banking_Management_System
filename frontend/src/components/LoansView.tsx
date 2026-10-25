@@ -30,8 +30,9 @@ export const LoansView: React.FC<LoansViewProps> = ({
   const [amountRupees, setAmountRupees] = useState(250000);
   const [tenureMonths, setTenureMonths] = useState(24);
   const [purpose, setPurpose] = useState("");
-  const [applying, setApplying] = useState(false);
-  const [applyError, setApplyError] = useState("");
+const [applying, setApplying] = useState(false);
+const [applyError, setApplyError] = useState("");
+const [supportingDocuments, setSupportingDocuments] = useState<File[]>([]);
 
   // EMI Preview state
   const [previewEmi, setPreviewEmi] = useState(0);
@@ -54,6 +55,43 @@ export const LoansView: React.FC<LoansViewProps> = ({
     setPreviewTotalRepayment(Math.round(totalRepay));
   }, [amountRupees, tenureMonths, loanType]);
 
+const handleDocumentSelection = (
+  event: React.ChangeEvent<HTMLInputElement>
+) => {
+  const files = Array.from(event.target.files || []);
+  event.target.value = "";
+
+  if (files.length > 5) {
+    setApplyError("You can upload a maximum of 5 documents.");
+    return;
+  }
+
+  const allowedTypes = [
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+  ];
+
+  const maxSizeBytes = 5 * 1024 * 1024;
+
+  const invalidFile = files.find(
+    (file) =>
+      !allowedTypes.includes(file.type) ||
+      file.size === 0 ||
+      file.size > maxSizeBytes
+  );
+
+  if (invalidFile) {
+    setApplyError(
+      `${invalidFile.name}: select a non-empty PDF, JPG, or PNG file up to 5 MB.`
+    );
+    return;
+  }
+
+  setSupportingDocuments(files);
+  setApplyError("");
+};
+
   const handleApplyLoan = async (e: React.FormEvent) => {
     e.preventDefault();
     setApplyError("");
@@ -71,15 +109,17 @@ export const LoansView: React.FC<LoansViewProps> = ({
     setApplying(true);
     try {
       await api.applyLoan(token, {
-        accountId: selectedAccountId,
-        loanType,
-        amountRupees,
-        tenureMonths,
-        purpose: purpose.trim(),
-      });
+  accountId: selectedAccountId,
+  loanType,
+  amountRupees,
+  tenureMonths,
+  purpose: purpose.trim(),
+  documents: supportingDocuments,
+});
 
       onToast(`Loan application for ₹${amountRupees.toLocaleString()} submitted!`);
       setPurpose("");
+      setSupportingDocuments([]);
       await onRefreshData();
     } catch (err: any) {
       setApplyError(err.message || "Failed to submit loan application.");
@@ -208,6 +248,69 @@ export const LoansView: React.FC<LoansViewProps> = ({
               />
             </div>
 
+            
+<div className="form-group" style={{ marginTop: 16 }}>
+  <label className="form-label">
+    Supporting Documents (Optional)
+  </label>
+
+  <input
+    type="file"
+    accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+    multiple
+    onChange={handleDocumentSelection}
+    disabled={applying}
+  />
+
+  <p
+    style={{
+      fontSize: 12,
+      color: "var(--text-muted)",
+      marginTop: 6,
+    }}
+  >
+    Upload up to 5 documents. PDF, JPG, and PNG formats; maximum 5 MB each.
+  </p>
+
+  {supportingDocuments.length > 0 && (
+    <div style={{ marginTop: 8 }}>
+      {supportingDocuments.map((file, index) => (
+        <div
+          key={`${file.name}-${file.size}-${index}`}
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 8,
+            fontSize: 12,
+            padding: "6px 0",
+            color: "var(--text-main)",
+          }}
+        >
+          <span>
+            <FileCheck size={14} style={{ verticalAlign: "middle" }} />{" "}
+            {file.name} ({(file.size / 1024).toFixed(0)} KB)
+          </span>
+
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() =>
+              setSupportingDocuments((previous) =>
+                previous.filter((_, i) => i !== index)
+              )
+            }
+            disabled={applying}
+          >
+            Remove
+          </button>
+        </div>
+      ))}
+    </div>
+  )}
+</div>
+
+
             <button type="submit" className="btn btn-primary" style={{ width: "100%", marginTop: 10 }} disabled={applying}>
               <FileCheck size={16} /> {applying ? "Submitting Application..." : "Submit Loan Application"}
             </button>
@@ -302,7 +405,82 @@ export const LoansView: React.FC<LoansViewProps> = ({
                       <div style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 4, fontStyle: "italic" }}>
                         Bank Note: {loan.reviewNotes}
                       </div>
+                      
                     )}
+                    
+{loan.documents && loan.documents.length > 0 && (
+  <div
+    style={{
+      marginTop: 12,
+      paddingTop: 10,
+      borderTop: "1px solid var(--border-subtle)",
+    }}
+  >
+    <div
+      style={{
+        fontSize: 12,
+        fontWeight: 700,
+        color: "var(--text-main)",
+        marginBottom: 8,
+      }}
+    >
+      <FileCheck
+        size={14}
+        style={{ verticalAlign: "middle", marginRight: 6 }}
+      />
+      Supporting Documents ({loan.documents.length})
+    </div>
+
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {loan.documents.map((doc) => (
+        <div
+          key={doc.id}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 10,
+            flexWrap: "wrap",
+          }}
+        >
+          <span
+            style={{
+              fontSize: 12,
+              color: "var(--text-muted)",
+              overflowWrap: "anywhere",
+            }}
+          >
+            {doc.originalName} ({(doc.sizeBytes / 1024).toFixed(0)} KB)
+          </span>
+
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={async () => {
+              try {
+                await api.downloadLoanDocument(
+                  token,
+                  loan.id,
+                  doc.id,
+                  doc.originalName
+                );
+              } catch (err: unknown) {
+                onToast(
+                  err instanceof Error
+                    ? err.message
+                    : "Failed to download document."
+                );
+              }
+            }}
+          >
+            Download
+          </button>
+        </div>
+      ))}
+    </div>
+  </div>
+)}
+
                   </div>
 
                   <div>

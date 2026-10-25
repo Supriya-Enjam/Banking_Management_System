@@ -1,4 +1,34 @@
+
 import mongoose, { Schema, type InferSchemaType } from "mongoose";
+
+const loanDocumentSchema = new Schema(
+  {
+    documentType: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    originalName: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    storedName: {
+      type: String,
+      required: true,
+    },
+    mimeType: {
+      type: String,
+      required: true,
+    },
+    sizeBytes: {
+      type: Number,
+      required: true,
+      min: 1,
+    },
+  },
+  { _id: true, timestamps: true }
+);
 
 const loanSchema = new Schema(
   {
@@ -21,7 +51,7 @@ const loanSchema = new Schema(
     amountPaise: {
       type: Number,
       required: true,
-      min: 1000000, // min ₹10,000
+      min: 1000000,
     },
     interestRate: {
       type: Number,
@@ -51,6 +81,10 @@ const loanSchema = new Schema(
       type: String,
       trim: true,
       default: "",
+    },
+    documents: {
+      type: [loanDocumentSchema],
+      default: [],
     },
     status: {
       type: String,

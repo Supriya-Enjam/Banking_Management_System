@@ -107,6 +107,13 @@ export interface Loan {
     kycStatus?: string;
   };
   createdAt: string;
+  documents?: {
+  id: string;
+  documentType: string;
+  originalName: string;
+  mimeType: string;
+  sizeBytes: number;
+}[];
 }
 
 export interface FixedDeposit {
@@ -1193,6 +1200,7 @@ reviewAccountOpeningApplication(
     });
   },
 
+  
   applyLoan(
     token: string,
     data: {
@@ -1201,17 +1209,31 @@ reviewAccountOpeningApplication(
       amountRupees: number;
       tenureMonths: number;
       purpose: string;
+      documents?: File[];
     }
   ) {
+    const formData = new FormData();
+
+    formData.append("accountId", data.accountId);
+    formData.append("loanType", data.loanType);
+    formData.append("amountRupees", String(data.amountRupees));
+    formData.append("tenureMonths", String(data.tenureMonths));
+    formData.append("purpose", data.purpose);
+
+    (data.documents || []).forEach((file) => {
+      formData.append("documents", file);
+    });
+
     return request<{ success: boolean; message: string; loan: any }>(
       "/loans/apply",
       {
         method: "POST",
-        body: JSON.stringify(data),
+        body: formData,
       },
       token
     );
   },
+
 
   getMyLoans(token: string) {
     return request<{ success: boolean; count: number; loans: Loan[] }>(
@@ -1220,6 +1242,48 @@ reviewAccountOpeningApplication(
       token
     );
   },
+
+  
+  downloadLoanDocument(
+    token: string,
+    loanId: string,
+    documentId: string,
+    fileName: string
+  ): Promise<void> {
+    return (async () => {
+      const response = await fetch(
+        `${API_BASE_URL}/loans/${encodeURIComponent(loanId)}/documents/${encodeURIComponent(documentId)}/download`,
+        {
+          method: "GET",
+          credentials: "include",
+        }
+      );
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(
+          typeof data.message === "string"
+            ? data.message
+            : "Failed to download document."
+        );
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+
+      try {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      } finally {
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }
+    })();
+  },
+
 
   getAllLoans(token: string) {
     return request<{ success: boolean; count: number; loans: Loan[] }>(

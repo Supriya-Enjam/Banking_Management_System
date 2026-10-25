@@ -8,6 +8,10 @@ import { Customer } from "../models/Customer";
 import { Transaction } from "../models/Transaction";
 import { logAudit, sendNotification } from "../utils/auditAndNotify";
 import { broadcastStaffEvent } from "../utils/staffEventBus";
+import { loanDocumentUpload } from "../middleware/loanUpload";
+import fs from "node:fs";
+import path from "node:path";
+import { sendLoanDecisionEmail } from "../services/emailService";
 
 export const loanRoutes = Router();
 
@@ -30,13 +34,18 @@ function calculateEmi(principalPaise: number, annualRate: number, tenureMonths: 
   return Math.round(emi);
 }
 
+
 const applyLoanSchema = z.object({
   accountId: z.string().min(1, "Account ID is required for disbursement."),
   loanType: z.enum(["Personal", "Home", "Vehicle", "Education", "Business"]),
-  amountRupees: z.number().min(10000, "Minimum loan amount is ₹10,000.").max(10000000, "Maximum loan amount is ₹10,000,000."),
-  tenureMonths: z.number().min(6).max(360),
+  amountRupees: z.coerce
+    .number()
+    .min(10000, "Minimum loan amount is ₹10,000.")
+    .max(10000000, "Maximum loan amount is ₹10,000,000."),
+  tenureMonths: z.coerce.number().int().min(6).max(360),
   purpose: z.string().trim().min(3, "Please provide the loan purpose."),
 });
+
 
 // Calculate EMI preview endpoint
 loanRoutes.post("/calculate", (req: Request, res: Response) => {
@@ -59,13 +68,17 @@ loanRoutes.post("/calculate", (req: Request, res: Response) => {
 });
 
 // 1. Customer: Apply for a new loan
-loanRoutes.post("/apply", async (req: Request, res: Response): Promise<void> => {
+loanRoutes.post(
+  "/apply",
+  loanDocumentUpload.array("documents", 5),
+  async (req: Request, res: Response): Promise<void> => {
   try {
     const customerId = res.locals.authenticatedUser?.customerId;
     if (!customerId) {
       res.status(401).json({ success: false, message: "Authentication required." });
       return;
     }
+    const uploadedFiles = (req.files || []) as Express.Multer.File[];
 
     const parsed = applyLoanSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -88,20 +101,29 @@ loanRoutes.post("/apply", async (req: Request, res: Response): Promise<void> => 
     const amountPaise = Math.round(amountRupees * 100);
     const emiPaise = calculateEmi(amountPaise, interestRate, tenureMonths);
 
-    const loan = await Loan.create({
-      customerId,
-      accountId: account._id,
-      loanType,
-      amountPaise,
-      interestRate,
-      tenureMonths,
-      emiPaise,
-      remainingAmountPaise: emiPaise * tenureMonths,
-      paidEmis: 0,
-      purpose,
-      status: "pending",
-      reviewNotes: "Application submitted. Under review by Bank Staff.",
-    });
+    
+const loan = await Loan.create({
+  customerId,
+  accountId: account._id,
+  loanType,
+  amountPaise,
+  interestRate,
+  tenureMonths,
+  emiPaise,
+  remainingAmountPaise: emiPaise * tenureMonths,
+  paidEmis: 0,
+  purpose,
+  status: "pending",
+  reviewNotes: "Application submitted. Under review by Bank Staff.",
+  documents: uploadedFiles.map((file) => ({
+    documentType: "Supporting document",
+    originalName: path.basename(file.originalname),
+    storedName: file.filename,
+    mimeType: file.mimetype,
+    sizeBytes: file.size,
+  })),
+});
+
 
     await logAudit({
       userId: customerId,
@@ -155,7 +177,8 @@ loanRoutes.post("/apply", async (req: Request, res: Response): Promise<void> => 
     console.error("Loan application error:", error);
     res.status(500).json({ success: false, message: "Failed to submit loan application." });
   }
-});
+}
+);
 
 // 2. Customer: Get my loans
 loanRoutes.get("/my", async (_req: Request, res: Response): Promise<void> => {
@@ -170,6 +193,9 @@ loanRoutes.get("/my", async (_req: Request, res: Response): Promise<void> => {
       .populate("accountId", "accountNumber")
       .sort({ createdAt: -1 })
       .lean();
+
+
+      
 
     res.json({
       success: true,
@@ -187,16 +213,131 @@ loanRoutes.get("/my", async (_req: Request, res: Response): Promise<void> => {
         remainingAmountPaise: loan.remainingAmountPaise,
         paidEmis: loan.paidEmis,
         purpose: loan.purpose,
-        status: loan.status,
-        accountNumber: loan.accountId?.accountNumber || "—",
-        reviewNotes: loan.reviewNotes,
-        createdAt: loan.createdAt,
+status: loan.status,
+accountNumber: loan.accountId?.accountNumber || "—",
+reviewNotes: loan.reviewNotes,
+documents: (loan.documents || []).map((doc: any) => ({
+  id: doc._id?.toString(),
+  documentType: doc.documentType,
+  originalName: doc.originalName,
+  mimeType: doc.mimeType,
+  sizeBytes: doc.sizeBytes,
+})),
+createdAt: loan.createdAt,
       })),
     });
   } catch (error) {
     res.status(500).json({ success: false, message: "Failed to load loans." });
   }
 });
+
+
+/** Download a supporting document for a loan after checking authorization. */
+loanRoutes.get(
+  "/:id/documents/:documentId/download",
+  async (req: Request, res: Response): Promise<void> => {
+    try {
+      const user = res.locals.authenticatedUser;
+      const id = String(req.params.id ?? "");
+const documentId = String(req.params.documentId ?? "");
+
+      if (!/^[a-f\d]{24}$/i.test(id) || !/^[a-f\d]{24}$/i.test(documentId)) {
+        res.status(400).json({
+          success: false,
+          message: "Invalid loan or document ID.",
+        });
+        return;
+      }
+
+      if (!user?.customerId || !user?.role) {
+        res.status(401).json({
+          success: false,
+          message: "Authentication required.",
+        });
+        return;
+      }
+
+      const loan = await Loan.findById(id).select("customerId documents").lean();
+
+      if (!loan) {
+        res.status(404).json({
+          success: false,
+          message: "Loan application not found.",
+        });
+        return;
+      }
+
+      const isPrivileged = ["staff", "management", "admin"].includes(user.role);
+      const ownsLoan = loan.customerId.toString() === user.customerId.toString();
+
+      if (!ownsLoan && !isPrivileged) {
+        res.status(403).json({
+          success: false,
+          message: "You are not authorized to access this loan document.",
+        });
+        return;
+      }
+
+      const document = (loan.documents || []).find(
+        (doc: any) => doc._id?.toString() === documentId
+      );
+
+      if (!document) {
+        res.status(404).json({
+          success: false,
+          message: "Loan document not found.",
+        });
+        return;
+      }
+
+      const uploadDirectory = path.resolve(
+        process.cwd(),
+        "private-uploads",
+        "loans"
+      );
+
+      const filePath = path.resolve(
+        uploadDirectory,
+        path.basename(document.storedName)
+      );
+
+      // Ensure the resolved file remains inside the private upload directory.
+      if (!filePath.startsWith(uploadDirectory + path.sep)) {
+        res.status(400).json({
+          success: false,
+          message: "Invalid document path.",
+        });
+        return;
+      }
+
+      if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+        res.status(404).json({
+          success: false,
+          message: "The uploaded document file could not be found.",
+        });
+        return;
+      }
+
+      res.download(filePath, path.basename(document.originalName), (error) => {
+        if (error && !res.headersSent) {
+          res.status(500).json({
+            success: false,
+            message: "Failed to download the loan document.",
+          });
+        }
+      });
+    } catch (error) {
+      console.error("Loan document download error:", error);
+      if (!res.headersSent) {
+        res.status(500).json({
+          success: false,
+          message: "Failed to download loan document.",
+        });
+      }
+    }
+  }
+);
+
 
 // 3. Staff / Admin: List all loans across the bank
 loanRoutes.get("/all", requireRoles("staff", "management","admin"), async (_req: Request, res: Response): Promise<void> => {
@@ -231,15 +372,24 @@ loanRoutes.get("/all", requireRoles("staff", "management","admin"), async (_req:
         remainingAmount: loan.remainingAmountPaise / 100,
         paidEmis: loan.paidEmis,
         purpose: loan.purpose,
-        status: loan.status,
-        reviewNotes: loan.reviewNotes,
-        createdAt: loan.createdAt,
+status: loan.status,
+reviewNotes: loan.reviewNotes,
+documents: (loan.documents || []).map((doc: any) => ({
+  id: doc._id?.toString(),
+  documentType: doc.documentType,
+  originalName: doc.originalName,
+  mimeType: doc.mimeType,
+  sizeBytes: doc.sizeBytes,
+})),
+createdAt: loan.createdAt,
       })),
     });
   } catch (error) {
     res.status(500).json({ success: false, message: "Failed to load all loans." });
   }
 });
+
+
 
 // 4. Staff / Admin: Approve or Reject a loan
 loanRoutes.patch("/:id/review", requireRoles("staff", "admin"), async (req: Request, res: Response): Promise<void> => {
@@ -318,6 +468,34 @@ loanRoutes.patch("/:id/review", requireRoles("staff", "admin"), async (req: Requ
       action: action === "approve" ? "LOAN_APPROVED" : "LOAN_REJECTED",
       details: `${action === "approve" ? "Approved" : "Rejected"} loan of ₹${(loan.amountPaise / 100).toLocaleString()} for ${custObj?.name}. Notes: ${loan.reviewNotes}`,
     });
+
+
+
+    // Send loan decision email to the customer.
+    // Email failure must not undo the loan decision.
+    try {
+      if (custObj?.email) {
+        await sendLoanDecisionEmail(
+          custObj.email,
+          custObj.name || "Customer",
+          {
+            loanType: loan.loanType,
+            amountPaise: loan.amountPaise,
+            status: action === "approve" ? "approved" : "rejected",
+            reviewNotes: loan.reviewNotes || "",
+            tenureMonths: loan.tenureMonths,
+            emiPaise: loan.emiPaise,
+          }
+        );
+      } else {
+        console.warn(
+          `Loan decision email skipped: customer email not found for loan ${loan.id}.`
+        );
+      }
+    } catch (emailError) {
+      console.error("Failed to send loan decision email:", emailError);
+    }
+
 
     res.json({
       success: true,
