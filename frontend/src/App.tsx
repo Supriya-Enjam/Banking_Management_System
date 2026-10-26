@@ -944,9 +944,10 @@ const toggleTheme = useCallback(() => {
                 />
               )}
 
-              {activePage === "accounts" && (
+              {activePage === "accounts" && customer && (
                 <AccountsView
                   token={token}
+                  customer={customer}
                   accounts={accounts}
                   onRefreshData={loadUserData}
                   onOpenDeposit={handleOpenDeposit}

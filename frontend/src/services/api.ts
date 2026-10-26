@@ -436,16 +436,51 @@ export type AccountOpeningDocumentType =
   | "photo"
   | "business_registration";
 
+
+export type DocumentVerificationStatus =
+  | "pending"
+  | "readable"
+  | "unreadable"
+  | "manual_review";
+
+
+export type DocumentAuthenticityStatus =
+  | "pending"
+  | "verified"
+  | "rejected";
+
 export interface AccountOpeningDocument {
   id: string;
   documentType: AccountOpeningDocumentType;
   originalName: string;
   mimeType: string;
   sizeBytes: number;
+  verificationStatus: DocumentVerificationStatus;
+  analysisMessage: string;
+  analyzedAt: string | null;
+  authenticityStatus?: DocumentAuthenticityStatus;
+  authenticityMessage?: string;
+  authenticityVerifiedAt?: string | null;
+  authenticityVerifiedBy?: string | null;
+}
+
+export interface AccountOpeningApplicantDetails {
+  fullName: string;
+  dateOfBirth: string;
+  email: string;
+  mobileNumber: string;
+  residentialAddress: string;
+}
+
+export interface AccountOpeningRequirements {
+  maxDocumentSizeBytes: number;
+  maxDocumentCount: number;
+  acceptedMimeTypes: string[];
 }
 
 export interface AccountOpeningApplication {
   id: string;
+  applicantDetails?: AccountOpeningApplicantDetails | null;
   customer?: {
     id: string;
     name: string;
@@ -471,6 +506,7 @@ export interface StaffAccountOpeningApplication {
   requestedAccountType?: "savings" | "current" | "business";
   initialDepositPaise: number;
   status: AccountOpeningStatus;
+  applicantDetails?: AccountOpeningApplicantDetails | null;
   reviewRemarks?: string;
   createdAt: string;
   reviewedAt?: string | null;
@@ -479,13 +515,7 @@ export interface StaffAccountOpeningApplication {
     name?: string;
     email?: string;
   };
-  documents: Array<{
-    id: string;
-    documentType: string;
-    originalName: string;
-    mimeType: string;
-    sizeBytes: number;
-  }>;
+   documents: AccountOpeningDocument[];
 }
 // =========================================================
 // API METHODS
@@ -672,6 +702,7 @@ export const api = {
     data: {
       accountType: "savings" | "current" | "business";
       initialDeposit: number;
+      applicantDetails: AccountOpeningApplicantDetails;
       documents: Array<{
         documentType: AccountOpeningDocumentType;
         file: File;
@@ -682,6 +713,14 @@ export const api = {
 
     formData.append("accountType", data.accountType);
     formData.append("initialDeposit", String(data.initialDeposit));
+    formData.append("fullName", data.applicantDetails.fullName);
+    formData.append("dateOfBirth", data.applicantDetails.dateOfBirth);
+    formData.append("email", data.applicantDetails.email);
+    formData.append("mobileNumber", data.applicantDetails.mobileNumber);
+    formData.append(
+      "residentialAddress",
+      data.applicantDetails.residentialAddress
+    );
 
     formData.append(
       "documentTypes",
@@ -706,12 +745,25 @@ export const api = {
     );
   },
 
+  getAccountOpeningRequirements(token: string) {
+    return request<
+      { success: boolean } & AccountOpeningRequirements
+    >("/account-opening/requirements", {}, token);
+  },
+
   getAccountOpeningApplications(token: string) {
     return request<{
       success: boolean;
       count: number;
       applications: AccountOpeningApplication[];
     }>("/account-opening", {}, token);
+  },
+
+  getStaffAccountOpeningDocumentUrl(
+    applicationId: string,
+    documentId: string
+  ) {
+    return `${API_BASE_URL}/staff/account-opening/${encodeURIComponent(applicationId)}/documents/${encodeURIComponent(documentId)}`;
   },
 
 getStaffAccountOpeningApplications(
@@ -749,6 +801,27 @@ reviewAccountOpeningApplication(
     token
   );
 },
+
+  verifyAccountOpeningDocument(
+    token: string,
+    applicationId: string,
+    documentId: string,
+    decision: "verified" | "rejected",
+    remarks: string
+  ) {
+    return request<{
+      success: boolean;
+      message: string;
+      application: StaffAccountOpeningApplication;
+    }>(
+      `/staff/account-opening/${encodeURIComponent(applicationId)}/documents/${encodeURIComponent(documentId)}/verify`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ decision, remarks }),
+      },
+      token
+    );
+  },
 
 
   // -------------------------------------------------------

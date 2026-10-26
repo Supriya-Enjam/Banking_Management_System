@@ -66,6 +66,16 @@ function serializeApplication(application: any) {
   return {
     id: String(application._id),
     customer,
+    applicantDetails: application.applicantDetails
+      ? {
+          fullName: application.applicantDetails.fullName,
+          dateOfBirth: application.applicantDetails.dateOfBirth,
+          email: application.applicantDetails.email,
+          mobileNumber: application.applicantDetails.mobileNumber,
+          residentialAddress:
+            application.applicantDetails.residentialAddress,
+        }
+      : null,
     accountType: application.requestedAccountType,
     initialDepositPaise: application.initialDepositPaise,
     status: application.status,
@@ -74,13 +84,24 @@ function serializeApplication(application: any) {
     accountId: application.accountId
       ? String(application.accountId)
       : null,
-    documents: application.documents.map((document: any) => ({
-      id: String(document._id),
-      documentType: document.documentType,
-      originalName: document.originalName,
-      mimeType: document.mimeType,
-      sizeBytes: document.sizeBytes,
-    })),
+
+documents: application.documents.map((document: any) => ({
+  id: String(document._id),
+  documentType: document.documentType,
+  originalName: document.originalName,
+  mimeType: document.mimeType,
+  sizeBytes: document.sizeBytes,
+  verificationStatus: document.verificationStatus ?? "pending",
+  analysisMessage:
+    document.analysisMessage ??
+    "Document analysis details are not available.",
+  analyzedAt: document.analyzedAt ?? null,
+  authenticityStatus: document.authenticityStatus,
+  authenticityMessage: document.authenticityMessage,
+  authenticityVerifiedAt: document.authenticityVerifiedAt,
+authenticityVerifiedBy: document.authenticityVerifiedBy,
+})),
+
     createdAt: application.createdAt,
     updatedAt: application.updatedAt,
   };
@@ -258,6 +279,121 @@ staffAccountOpeningRoutes.get(
   }
 );
 
+
+/* -----------------------------------------------------
+   PATCH /api/staff/account-opening/:id/documents/:documentId/verify
+   Body: { decision: "verified" | "rejected", remarks: string }
+----------------------------------------------------- */
+
+staffAccountOpeningRoutes.patch(
+  "/:id/documents/:documentId/verify",
+  async (req: Request, res: Response) => {
+    const reviewerId = getReviewerId(res);
+
+    if (!reviewerId || !mongoose.isValidObjectId(reviewerId)) {
+      return res.status(401).json({
+        success: false,
+        message: "Your staff session is invalid. Please sign in again.",
+      });
+    }
+
+    const { id, documentId } = req.params;
+    const { decision, remarks } = req.body ?? {};
+
+    if (
+      !mongoose.isValidObjectId(id) ||
+      !mongoose.isValidObjectId(documentId)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid application or document ID.",
+      });
+    }
+
+    if (decision !== "verified" && decision !== "rejected") {
+      return res.status(400).json({
+        success: false,
+        message: "Decision must be verified or rejected.",
+      });
+    }
+
+    if (
+      typeof remarks !== "string" ||
+      remarks.trim().length === 0 ||
+      remarks.trim().length > 500
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Provide verification remarks of 1–500 characters.",
+      });
+    }
+
+    try {
+      const application =
+        await AccountOpeningApplication.findOne({
+          _id: id,
+          status: "pending",
+        });
+
+      if (!application) {
+        return res.status(404).json({
+          success: false,
+          message: "Pending account-opening application not found.",
+        });
+      }
+
+      const document = application.documents.find(
+        (item) => String(item._id) === documentId
+      );
+
+      if (!document) {
+        return res.status(404).json({
+          success: false,
+          message: "Document not found in this application.",
+        });
+      }
+
+      // Readability is a prerequisite, not proof of authenticity.
+      if (
+        decision === "verified" &&
+        document.verificationStatus !== "readable"
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Only readable documents can be marked verified. Request a clearer document or resolve manual review first.",
+        });
+      }
+
+      document.authenticityStatus = decision;
+      document.authenticityMessage = remarks.trim();
+      document.authenticityVerifiedAt = new Date();
+      document.authenticityVerifiedBy = new mongoose.Types.ObjectId(
+        reviewerId
+      );
+
+      await application.save();
+
+      return res.json({
+        success: true,
+        message:
+          decision === "verified"
+            ? "Document verification decision recorded."
+            : "Document rejected during authenticity review.",
+        application: serializeApplication(application),
+      });
+    } catch (error) {
+      console.error("Document authenticity review failed:", error);
+
+      return res.status(500).json({
+        success: false,
+        message: "Could not record the document verification decision.",
+      });
+    }
+  }
+);
+
+
 // -----------------------------------------------------
 // PATCH /api/staff/account-opening/:id/review
 // Body: { decision: "approved" | "rejected", remarks?: string }
@@ -326,32 +462,36 @@ staffAccountOpeningRoutes.patch(
         | undefined;
 
       await session.withTransaction(async () => {
-        const application =
-          await AccountOpeningApplication.findOneAndUpdate(
-            {
-              _id: id,
-              status: "pending",
-            },
-            {
-              $set: {
-                status: decision,
-                reviewRemarks: remarks.trim(),
-                reviewedBy: reviewerId,
-                reviewedAt: new Date(),
-              },
-            },
-            {
-              new: true,
-              session,
-            }
-          );
+        const application = await AccountOpeningApplication.findOne({
+  _id: id,
+  status: "pending",
+}).session(session);
 
-        if (!application) {
-          throw new Error("APPLICATION_ALREADY_REVIEWED");
-        }
+if (!application) {
+  throw new Error("APPLICATION_ALREADY_REVIEWED");
+}
+
+if (decision === "approved") {
+  const unverifiedDocument = application.documents.find(
+    (document) =>
+      document.verificationStatus !== "readable" ||
+      document.authenticityStatus !== "verified"
+  );
+
+  if (unverifiedDocument) {
+    throw new Error("DOCUMENTS_NOT_VERIFIED");
+  }
+}
+
+application.status = decision;
+application.reviewRemarks = remarks.trim();
+application.reviewedBy = new mongoose.Types.ObjectId(reviewerId);
+application.reviewedAt = new Date();
 
         if (decision === "approved") {
-          const accountNumber = await generateAccountNumber();
+
+
+  const accountNumber = await generateAccountNumber();
 
           const dailyLimitPaise =
             application.requestedAccountType === "business"
@@ -393,7 +533,7 @@ staffAccountOpeningRoutes.patch(
           }
 
           application.accountId = account._id;
-          await application.save({ session });
+
 
           accountDetails = {
             id: String(account._id),
@@ -403,6 +543,8 @@ staffAccountOpeningRoutes.patch(
             createdAt: account.createdAt,
           };
         }
+
+        await application.save({ session });
       });
 
       // The database transaction has committed at this point.
@@ -418,8 +560,8 @@ staffAccountOpeningRoutes.patch(
           message:
             "The review completed, but the application could not be reloaded.",
         });
-      }
 
+      }
       // Send the email after committing the database transaction.
       // Email failures must not undo a successfully opened account.
       if (decision === "approved" && accountDetails) {
@@ -463,6 +605,16 @@ staffAccountOpeningRoutes.patch(
         account: accountDetails ?? null,
       });
     } catch (error) {
+      if (
+  error instanceof Error &&
+  error.message === "DOCUMENTS_NOT_VERIFIED"
+) {
+  return res.status(400).json({
+    success: false,
+    message:
+      "All submitted documents must be readable and authenticity-verified before this application can be approved.",
+  });
+}
       if (
         error instanceof Error &&
         error.message === "APPLICATION_ALREADY_REVIEWED"

@@ -32,6 +32,47 @@ const uploadedDocumentSchema = new Schema(
       required: true,
       min: 1,
     },
+    verificationStatus: {
+      type: String,
+      enum: [
+        "pending",
+        "readable",
+        "unreadable",
+        "manual_review",
+      ],
+      default: "pending",
+      required: true,
+    },
+    analysisMessage: {
+      type: String,
+      default: "",
+      maxlength: 500,
+    },
+    analyzedAt: {
+      type: Date,
+      default: null,
+    },
+
+    authenticityStatus: {
+      type: String,
+      enum: ["pending", "verified", "rejected"],
+      default: "pending",
+      required: true,
+    },
+    authenticityMessage: {
+      type: String,
+      default: "Document authenticity has not been verified.",
+      maxlength: 500,
+    },
+    authenticityVerifiedAt: {
+      type: Date,
+      default: null,
+    },
+    authenticityVerifiedBy: {
+      type: Schema.Types.ObjectId,
+      ref: "Customer",
+      default: null,
+    },
   },
   { _id: true }
 );
@@ -43,6 +84,35 @@ const accountOpeningApplicationSchema = new Schema(
       ref: "Customer",
       required: true,
       index: true,
+    },
+    applicantDetails: {
+      // Older applications predate this snapshot; new submissions are validated by the route.
+      fullName: {
+        type: String,
+        trim: true,
+        minlength: 2,
+        maxlength: 80,
+      },
+      dateOfBirth: {
+        type: Date,
+      },
+      email: {
+        type: String,
+        trim: true,
+        lowercase: true,
+        maxlength: 254,
+      },
+      mobileNumber: {
+        type: String,
+        trim: true,
+        maxlength: 30,
+      },
+      residentialAddress: {
+        type: String,
+        trim: true,
+        minlength: 5,
+        maxlength: 250,
+      },
     },
     requestedAccountType: {
       type: String,
@@ -65,8 +135,8 @@ const accountOpeningApplicationSchema = new Schema(
       required: true,
       validate: {
         validator: (documents: unknown[]) =>
-          Array.isArray(documents) && documents.length >= 2,
-        message: "At least two documents are required.",
+          Array.isArray(documents) && documents.length >= 3,
+        message: "Identity, address, and photo documents are required.",
       },
     },
     status: {

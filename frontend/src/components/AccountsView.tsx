@@ -11,17 +11,24 @@ import {
   Clock,
   CheckCircle,
   XCircle,
+  Upload,
+  Trash2,
+  FileImage,
 } from "lucide-react";
 
 import {
   api,
   type BankAccount,
+  type Customer,
   type AccountOpeningApplication,
+  type AccountOpeningRequirements,
+  type AccountOpeningApplicantDetails,
   type AccountOpeningDocumentType,
 } from "../services/api";
 
 interface AccountsViewProps {
   token: string;
+  customer: Customer;
   accounts: BankAccount[];
   onRefreshData: () => Promise<void>;
   onOpenDeposit: (accountId: string) => void;
@@ -53,8 +60,55 @@ const statusColor: Record<string, string> = {
   rejected: "#dc2626",
 };
 
+function formatFileSize(sizeBytes: number): string {
+  if (sizeBytes < 1024) return `${sizeBytes} B`;
+  if (sizeBytes < 1024 * 1024) {
+    return `${(sizeBytes / 1024).toFixed(1)} KB`;
+  }
+  return `${(sizeBytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+const LocalDocumentPreview: React.FC<{ file: File }> = ({ file }) => {
+  const [previewUrl, setPreviewUrl] = useState("");
+
+  useEffect(() => {
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  if (!previewUrl) return null;
+
+  return file.type === "application/pdf" ? (
+    <iframe
+      title={`Preview of ${file.name}`}
+      src={previewUrl}
+      style={{
+        display: "block",
+        width: "100%",
+        height: 260,
+        border: "1px solid var(--border-subtle)",
+        borderRadius: 8,
+      }}
+    />
+  ) : (
+    <img
+      src={previewUrl}
+      alt={`Preview of ${file.name}`}
+      style={{
+        display: "block",
+        maxWidth: "100%",
+        maxHeight: 260,
+        objectFit: "contain",
+        borderRadius: 8,
+      }}
+    />
+  );
+};
+
 export const AccountsView: React.FC<AccountsViewProps> = ({
   token,
+  customer,
   accounts,
   onRefreshData,
   onOpenDeposit,
@@ -67,9 +121,22 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
     "savings" | "current" | "business"
   >("savings");
   const [initialDeposit, setInitialDeposit] = useState(1000);
+  const [applicantDetails, setApplicantDetails] =
+    useState<AccountOpeningApplicantDetails>({
+      fullName: customer.name || "",
+      dateOfBirth: "",
+      email: customer.email || "",
+      mobileNumber: customer.phone || "",
+      residentialAddress: customer.address || "",
+    });
   const [files, setFiles] = useState<
     Partial<Record<AccountOpeningDocumentType, File>>
   >({});
+  const [uploadRequirements, setUploadRequirements] =
+    useState<AccountOpeningRequirements | null>(null);
+  const [loadingUploadRequirements, setLoadingUploadRequirements] =
+    useState(false);
+  const [uploadRequirementsError, setUploadRequirementsError] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -78,6 +145,36 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
   >([]);
   const [loadingApplications, setLoadingApplications] = useState(true);
   const [applicationLoadError, setApplicationLoadError] = useState("");
+
+  useEffect(() => {
+    if (!showCreateModal) return;
+
+    let active = true;
+    setLoadingUploadRequirements(true);
+    setUploadRequirementsError("");
+
+    void api
+      .getAccountOpeningRequirements(token)
+      .then((requirements) => {
+        if (active) setUploadRequirements(requirements);
+      })
+      .catch((err: unknown) => {
+        if (!active) return;
+        setUploadRequirements(null);
+        setUploadRequirementsError(
+          err instanceof Error
+            ? err.message
+            : "Could not load document upload requirements."
+        );
+      })
+      .finally(() => {
+        if (active) setLoadingUploadRequirements(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [showCreateModal, token]);
 
   const requiredDocuments = DOCUMENT_FIELDS.filter(
     (document) =>
@@ -124,6 +221,31 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
     documentType: AccountOpeningDocumentType,
     file: File | undefined
   ) => {
+    if (
+      uploadRequirements &&
+      requiredDocuments.length > uploadRequirements.maxDocumentCount
+    ) {
+      setError(
+        "The selected account type requires more documents than the server currently accepts."
+      );
+      return;
+    }
+
+    if (file && uploadRequirements) {
+      if (!uploadRequirements.acceptedMimeTypes.includes(file.type)) {
+        setError("Choose a PDF, JPEG, or PNG file.");
+        return;
+      }
+
+      if (file.size > uploadRequirements.maxDocumentSizeBytes) {
+        setError(
+          `Each document must be ${formatFileSize(uploadRequirements.maxDocumentSizeBytes)} or smaller.`
+        );
+        return;
+      }
+    }
+
+    setError("");
     setFiles((previous) => {
       const next = { ...previous };
 
@@ -146,9 +268,43 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
     if (
       !Number.isFinite(initialDeposit) ||
       initialDeposit < 0 ||
-      initialDeposit > 100000
+      initialDeposit > 100000 ||
+      Math.abs(initialDeposit * 100 - Math.round(initialDeposit * 100)) >
+        0.000001
     ) {
       setError("The initial deposit must be between ₹0 and ₹1,00,000.");
+      return;
+    }
+
+    if (!uploadRequirements) {
+      setError("Document upload requirements are unavailable. Please retry.");
+      return;
+    }
+
+    if (requiredDocuments.length > uploadRequirements.maxDocumentCount) {
+      setError(
+        "The selected account type requires more documents than the server currently accepts."
+      );
+      return;
+    }
+
+    const dateOfBirth = new Date(
+      `${applicantDetails.dateOfBirth}T00:00:00`
+    );
+    if (
+      applicantDetails.fullName.trim().length < 2 ||
+      applicantDetails.fullName.trim().length > 80 ||
+      !applicantDetails.dateOfBirth ||
+      Number.isNaN(dateOfBirth.getTime()) ||
+      dateOfBirth.getTime() > Date.now() ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(applicantDetails.email.trim()) ||
+      !/^[+()\d\s.-]{7,30}$/.test(applicantDetails.mobileNumber.trim()) ||
+      (applicantDetails.mobileNumber.match(/\d/g)?.length ?? 0) < 7 ||
+      (applicantDetails.mobileNumber.match(/\d/g)?.length ?? 0) > 15 ||
+      applicantDetails.residentialAddress.trim().length < 5 ||
+      applicantDetails.residentialAddress.trim().length > 250
+    ) {
+      setError("Enter valid applicant details before continuing.");
       return;
     }
 
@@ -171,21 +327,31 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
     }));
 
     const oversizedFile = selectedDocuments.find(
-      ({ file }) => file.size > 5 * 1024 * 1024
+      ({ file }) => file.size > uploadRequirements.maxDocumentSizeBytes
     );
 
     if (oversizedFile) {
-      setError("Each document must be 5 MB or smaller.");
+      setError(
+        `Each document must be ${formatFileSize(uploadRequirements.maxDocumentSizeBytes)} or smaller.`
+      );
       return;
     }
 
     const invalidFile = selectedDocuments.find(
       ({ file }) =>
-        !["application/pdf", "image/jpeg", "image/png"].includes(file.type)
+        !uploadRequirements.acceptedMimeTypes.includes(file.type)
     );
 
     if (invalidFile) {
-      setError("Documents must be PDF, JPG/JPEG, or PNG files.");
+      setError("One or more files use an unsupported format.");
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `Submit your ${accountType} account application for ${formatRupees(Math.round(initialDeposit * 100))}? Bank staff will review your details and documents before an account can be opened.`
+      )
+    ) {
       return;
     }
 
@@ -195,6 +361,14 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
       const result = await api.submitAccountOpeningApplication(token, {
         accountType,
         initialDeposit,
+        applicantDetails: {
+          ...applicantDetails,
+          fullName: applicantDetails.fullName.trim(),
+          email: applicantDetails.email.trim(),
+          mobileNumber: applicantDetails.mobileNumber.trim(),
+          residentialAddress:
+            applicantDetails.residentialAddress.trim(),
+        },
         documents: selectedDocuments,
       });
 
@@ -206,6 +380,13 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
       setFiles({});
       setInitialDeposit(1000);
       setAccountType("savings");
+      setApplicantDetails({
+        fullName: customer.name || "",
+        dateOfBirth: "",
+        email: customer.email || "",
+        mobileNumber: customer.phone || "",
+        residentialAddress: customer.address || "",
+      });
 
       await loadApplications();
     } catch (err) {
@@ -577,6 +758,181 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
                     </strong>
                   </div>
 
+{/* Document Analysis Results */}
+<div
+  style={{
+    marginTop: 16,
+    paddingTop: 14,
+    borderTop: "1px solid var(--border-subtle)",
+  }}
+>
+  <h3
+    style={{
+      margin: "0 0 12px",
+      fontSize: 14,
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+    }}
+  >
+    <FileText size={16} />
+    Document Analysis
+  </h3>
+
+  <div style={{ display: "grid", gap: 10 }}>
+    {application.documents.map((document) => {
+      const config = {
+        pending: {
+          label: "Analysis Pending",
+          color: "#6b7280",
+          Icon: Clock,
+        },
+        readable: {
+          label: "Readable",
+          color: "#059669",
+          Icon: CheckCircle,
+        },
+        unreadable: {
+          label: "Unreadable",
+          color: "#dc2626",
+          Icon: XCircle,
+        },
+        manual_review: {
+          label: "Manual Review Required",
+          color: "#d97706",
+          Icon: Clock,
+        },
+      }[document.verificationStatus];
+
+      return (
+        <div
+          key={document.id}
+          style={{
+            padding: 12,
+            border: "1px solid var(--border-subtle)",
+            borderRadius: 8,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            <div style={{ minWidth: 0 }}>
+              <div
+                style={{
+                  fontSize: 13,
+                  fontWeight: 600,
+                  textTransform: "capitalize",
+                }}
+              >
+                {document.documentType.replace(/_/g, " ")}
+              </div>
+
+              <div
+                style={{
+                  marginTop: 4,
+                  fontSize: 12,
+                  color: "var(--text-muted)",
+                  overflowWrap: "anywhere",
+                }}
+              >
+                {document.originalName}
+              </div>
+            </div>
+
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                color: config.color,
+                fontSize: 12,
+                fontWeight: 600,
+              }}
+            >
+              <config.Icon size={15} />
+              {config.label}
+            </span>
+          </div>
+
+          <p
+            style={{
+              margin: "8px 0 0",
+              fontSize: 12,
+              lineHeight: 1.5,
+              color: "var(--text-muted)",
+            }}
+          >
+            {document.analysisMessage ||
+              "No analysis details available."}
+          </p>
+
+          <div
+            style={{
+              marginTop: 10,
+              paddingTop: 9,
+              borderTop: "1px solid var(--border-subtle)",
+              fontSize: 12,
+            }}
+          >
+            <div style={{ fontWeight: 700 }}>
+              Authenticity:{" "}
+              <span
+                style={{
+                  color:
+                    document.authenticityStatus === "verified"
+                      ? "#059669"
+                      : document.authenticityStatus === "rejected"
+                        ? "#dc2626"
+                        : "#d97706",
+                  textTransform: "capitalize",
+                }}
+              >
+                {document.authenticityStatus || "pending"}
+              </span>
+            </div>
+            <p
+              style={{
+                margin: "4px 0 0",
+                lineHeight: 1.5,
+                color: "var(--text-muted)",
+              }}
+            >
+              {document.authenticityMessage ||
+                "Document authenticity has not been verified."}
+            </p>
+            {document.authenticityVerifiedAt && (
+              <div style={{ marginTop: 4, color: "var(--text-muted)" }}>
+                Decision recorded{" "}
+                {new Date(document.authenticityVerifiedAt).toLocaleString(
+                  "en-IN"
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    })}
+  </div>
+
+  <p
+    style={{
+      margin: "10px 0 0",
+      fontSize: 11,
+      lineHeight: 1.5,
+      color: "var(--text-muted)",
+    }}
+  >
+    This analysis checks document readability, not authenticity.
+    Bank staff must still review your documents.
+  </p>
+</div>
+
                   {application.accountId && (
                     <div
                       style={{
@@ -663,6 +1019,119 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
                   </div>
                 )}
 
+                <h3 style={{ fontSize: 15, margin: "0 0 12px" }}>
+                  Applicant details
+                </h3>
+                <div className="form-group">
+                  <label className="form-label" htmlFor="opening-full-name">
+                    Full name
+                  </label>
+                  <input
+                    id="opening-full-name"
+                    type="text"
+                    autoComplete="name"
+                    minLength={2}
+                    maxLength={80}
+                    required
+                    value={applicantDetails.fullName}
+                    disabled={creating}
+                    onChange={(event) =>
+                      setApplicantDetails((previous) => ({
+                        ...previous,
+                        fullName: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" htmlFor="opening-dob">
+                    Date of birth
+                  </label>
+                  <input
+                    id="opening-dob"
+                    type="date"
+                    autoComplete="bday"
+                    max={new Date().toISOString().slice(0, 10)}
+                    required
+                    value={applicantDetails.dateOfBirth}
+                    disabled={creating}
+                    onChange={(event) =>
+                      setApplicantDetails((previous) => ({
+                        ...previous,
+                        dateOfBirth: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" htmlFor="opening-email">
+                    Email address
+                  </label>
+                  <input
+                    id="opening-email"
+                    type="email"
+                    autoComplete="email"
+                    maxLength={254}
+                    required
+                    value={applicantDetails.email}
+                    disabled={creating}
+                    onChange={(event) =>
+                      setApplicantDetails((previous) => ({
+                        ...previous,
+                        email: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" htmlFor="opening-mobile">
+                    Mobile number
+                  </label>
+                  <input
+                    id="opening-mobile"
+                    type="tel"
+                    autoComplete="tel"
+                    maxLength={30}
+                    required
+                    value={applicantDetails.mobileNumber}
+                    disabled={creating}
+                    onChange={(event) =>
+                      setApplicantDetails((previous) => ({
+                        ...previous,
+                        mobileNumber: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" htmlFor="opening-address">
+                    Residential address
+                  </label>
+                  <textarea
+                    id="opening-address"
+                    autoComplete="street-address"
+                    minLength={5}
+                    maxLength={250}
+                    rows={3}
+                    required
+                    value={applicantDetails.residentialAddress}
+                    disabled={creating}
+                    onChange={(event) =>
+                      setApplicantDetails((previous) => ({
+                        ...previous,
+                        residentialAddress: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+
+                <h3 style={{ fontSize: 15, margin: "18px 0 12px" }}>
+                  Account preferences
+                </h3>
                 <div className="form-group">
                   <label className="form-label" htmlFor="opening-account-type">
                     Account type
@@ -712,15 +1181,27 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
                   <h3 style={{ fontSize: 15, margin: "0 0 6px" }}>
                     Required documents
                   </h3>
-                  <p
+                  {loadingUploadRequirements ? (
+                    <p role="status" style={{ margin: 0, color: "var(--text-muted)", fontSize: 12 }}>
+                      Loading secure upload requirements...
+                    </p>
+                  ) : uploadRequirementsError ? (
+                    <p role="alert" style={{ margin: 0, color: "var(--rose)", fontSize: 12 }}>
+                      {uploadRequirementsError}
+                    </p>
+                  ) : uploadRequirements ? (
+                    <p
                     style={{
                       margin: 0,
                       color: "var(--text-muted)",
                       fontSize: 12,
                     }}
                   >
-                    PDF, JPG, JPEG, or PNG. Maximum 5 MB per file.
+                    Accepted formats: {uploadRequirements.acceptedMimeTypes.join(", ")}.
+                    {" "}Maximum {formatFileSize(uploadRequirements.maxDocumentSizeBytes)} per file
+                    {" "}({uploadRequirements.maxDocumentCount} files total).
                   </p>
+                  ) : null}
                 </div>
 
                 {requiredDocuments.map((document) => (
@@ -736,33 +1217,97 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
                       {document.label}
                     </label>
 
-                    <input
-                      id={`document-${document.type}`}
-                      type="file"
-                      accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
-                      required
-                      disabled={creating}
-                      onChange={(event) =>
-                        handleFileChange(
-                          document.type,
-                          event.target.files?.[0]
-                        )
-                      }
-                    />
+                    <label
+                      htmlFor={`document-${document.type}`}
+                      onDragOver={(event) => event.preventDefault()}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        const droppedFile = event.dataTransfer.files[0];
+                        if (droppedFile) {
+                          handleFileChange(document.type, droppedFile);
+                        }
+                      }}
+                      style={{
+                        display: "grid",
+                        gap: 8,
+                        padding: 14,
+                        border: "1px dashed var(--border-subtle)",
+                        borderRadius: 10,
+                        cursor: creating || !uploadRequirements ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <Upload size={16} />
+                        Drop a file here or choose one
+                      </span>
+                      <input
+                        id={`document-${document.type}`}
+                        type="file"
+                        accept={uploadRequirements?.acceptedMimeTypes.join(",")}
+                        required={!files[document.type]}
+                        disabled={
+                          creating ||
+                          loadingUploadRequirements ||
+                          !uploadRequirements
+                        }
+                        onChange={(event) => {
+                          handleFileChange(
+                            document.type,
+                            event.target.files?.[0]
+                          );
+                          event.currentTarget.value = "";
+                        }}
+                      />
+                    </label>
 
                     {files[document.type] && (
                       <div
                         style={{
-                          marginTop: 6,
-                          fontSize: 12,
-                          color: "var(--text-muted)",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 6,
+                          display: "grid",
+                          gap: 8,
+                          marginTop: 8,
+                          padding: 10,
+                          border: "1px solid var(--border-subtle)",
+                          borderRadius: 8,
                         }}
                       >
-                        <FileText size={14} />
-                        <span>{files[document.type]?.name}</span>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "flex-start",
+                            gap: 8,
+                          }}
+                        >
+                          <div style={{ minWidth: 0, fontSize: 12 }}>
+                            {files[document.type]?.type.startsWith("image/") ? (
+                              <FileImage size={15} aria-hidden="true" />
+                            ) : (
+                              <FileText size={15} aria-hidden="true" />
+                            )}
+                            <div style={{ overflowWrap: "anywhere" }}>
+                              {files[document.type]?.name}
+                            </div>
+                            <div style={{ color: "var(--text-muted)" }}>
+                              {formatFileSize(files[document.type]?.size ?? 0)}
+                              {" · "}
+                              {files[document.type]?.type}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            disabled={creating}
+                            onClick={() =>
+                              handleFileChange(document.type, undefined)
+                            }
+                            aria-label={`Remove ${document.label}`}
+                          >
+                            <Trash2 size={14} />
+                            Remove / replace
+                          </button>
+                        </div>
+                        <LocalDocumentPreview file={files[document.type]!} />
                       </div>
                     )}
                   </div>
@@ -781,6 +1326,12 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
                   reviews your documents. An account is created only after
                   approval.
                 </div>
+                {creating && (
+                  <p role="status" aria-live="polite">
+                    Uploading documents and checking readability. Please keep
+                    this window open.
+                  </p>
+                )}
               </div>
 
               <div className="modal-footer">
@@ -795,7 +1346,11 @@ export const AccountsView: React.FC<AccountsViewProps> = ({
                 <button
                   type="submit"
                   className="btn btn-primary"
-                  disabled={creating}
+                  disabled={
+                    creating ||
+                    loadingUploadRequirements ||
+                    !uploadRequirements
+                  }
                 >
                   {creating ? "Submitting..." : "Submit for Review"}
                 </button>

@@ -322,7 +322,13 @@ export const StaffPortalView: React.FC<StaffPortalViewProps> = ({
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>(
     {}
   );
+const [verifyingDocumentId, setVerifyingDocumentId] = useState<string | null>(
+  null
+);
 
+const [documentVerificationRemarks, setDocumentVerificationRemarks] = useState<
+  Record<string, string>
+>({});
   const [accountOpeningApplications, setAccountOpeningApplications] =
   useState<StaffAccountOpeningApplication[]>([]);
 const [loadingAccountOpening, setLoadingAccountOpening] = useState(false);
@@ -786,6 +792,48 @@ const [openingReviewNotes, setOpeningReviewNotes] = useState<
       setReviewingCardId(null);
     }
   };
+
+  const handleVerifyAccountOpeningDocument = async (
+  applicationId: string,
+  documentId: string,
+  decision: "verified" | "rejected"
+) => {
+  const remarks = documentVerificationRemarks[documentId]?.trim();
+
+  if (!remarks) {
+    onToast("Please enter verification remarks before submitting.");
+    return;
+  }
+
+  setVerifyingDocumentId(documentId);
+
+  try {
+    const response = await api.verifyAccountOpeningDocument(
+      token,
+      applicationId,
+      documentId,
+      decision,
+      remarks
+    );
+
+    onToast(response.message || "Document verification updated.");
+
+    setDocumentVerificationRemarks((previous) => ({
+      ...previous,
+      [documentId]: "",
+    }));
+
+    await loadAccountOpeningApplications();
+  } catch (error) {
+    onToast(
+      error instanceof Error
+        ? error.message
+        : "Failed to update document verification."
+    );
+  } finally {
+    setVerifyingDocumentId(null);
+  }
+};
 
 const handleReviewAccountOpening = async (
   application: StaffAccountOpeningApplication,
@@ -2373,6 +2421,37 @@ const handleReviewAccountOpening = async (
                   </div>
                 </div>
 
+                {application.applicantDetails && (
+                  <div
+                    style={{
+                      marginTop: 14,
+                      padding: 12,
+                      borderRadius: 8,
+                      background: "var(--surface-2, rgba(148, 163, 184, 0.08))",
+                    }}
+                  >
+                    <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>
+                      Applicant details
+                    </div>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                        gap: 8,
+                        fontSize: 12,
+                      }}
+                    >
+                      <div><strong>Name:</strong> {application.applicantDetails.fullName}</div>
+                      <div><strong>Date of birth:</strong> {new Date(application.applicantDetails.dateOfBirth).toLocaleDateString("en-IN")}</div>
+                      <div><strong>Email:</strong> {application.applicantDetails.email}</div>
+                      <div><strong>Mobile:</strong> {application.applicantDetails.mobileNumber}</div>
+                      <div style={{ gridColumn: "1 / -1" }}>
+                        <strong>Address:</strong> {application.applicantDetails.residentialAddress}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div style={{ marginTop: 18 }}>
                   <div
                     style={{
@@ -2422,25 +2501,183 @@ const handleReviewAccountOpening = async (
                             >
                               {document.documentType.replace(/_/g, " ")}
                             </div>
+                            <div
+                              style={{
+                                fontSize: 11,
+                                color: "var(--text-muted)",
+                                marginTop: 3,
+                              }}
+                            >
+                              {document.mimeType} ·{" "}
+                              {document.sizeBytes < 1024 * 1024
+                                ? `${(document.sizeBytes / 1024).toFixed(1)} KB`
+                                : `${(document.sizeBytes / (1024 * 1024)).toFixed(2)} MB`}
+                            </div>
+
+                            <div
+                              style={{
+                                marginTop: 8,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 6,
+                                flexWrap: "wrap",
+                              }}
+                            >
+                              <span
+                                style={{
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  padding: "3px 8px",
+                                  borderRadius: 6,
+                                  background:
+                                    document.verificationStatus === "readable"
+                                      ? "rgba(34, 197, 94, 0.12)"
+                                      : document.verificationStatus === "unreadable"
+                                        ? "rgba(239, 68, 68, 0.12)"
+                                        : "rgba(234, 179, 8, 0.12)",
+                                  color:
+                                    document.verificationStatus === "readable"
+                                      ? "#16a34a"
+                                      : document.verificationStatus === "unreadable"
+                                        ? "#dc2626"
+                                        : "#ca8a04",
+                                }}
+                              >
+                                {(
+                                  document.verificationStatus || "pending"
+                                )
+                                  .replace(/_/g, " ")
+                                  .toUpperCase()}
+                              </span>
+                            </div>
+
+                            <div
+                              style={{
+                                fontSize: 12,
+                                color: "var(--text-muted)",
+                                marginTop: 6,
+                                lineHeight: 1.5,
+                              }}
+                            >
+                              {document.analysisMessage ||
+                                "Document analysis details are not available."}
+                            </div>
+
+                            {document.analyzedAt && (
+                              <div
+                                style={{
+                                  fontSize: 11,
+                                  color: "var(--text-muted)",
+                                  marginTop: 4,
+                                }}
+                              >
+                                Analyzed:{" "}
+                                {new Date(
+                                  document.analyzedAt
+                                ).toLocaleString("en-IN")}
+                              </div>
+                            )}
+<div className="mt-3 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+  <p className="text-sm font-semibold">
+    Authenticity Verification
+  </p>
+
+  <p className="mt-1 text-sm">
+    Status:{" "}
+    <span className="font-semibold">
+      {(document.authenticityStatus || "pending")
+        .replace(/_/g, " ")
+        .toUpperCase()}
+    </span>
+  </p>
+
+  <p className="mt-1 text-sm text-gray-500">
+    {document.authenticityMessage ||
+      "Document authenticity has not been verified."}
+  </p>
+
+  {document.authenticityVerifiedAt && (
+    <p className="mt-1 text-xs text-gray-500">
+      Verified at:{" "}
+      {new Date(document.authenticityVerifiedAt).toLocaleString()}
+    </p>
+  )}
+</div>
+
+{document.authenticityStatus !== "verified" &&
+  document.authenticityStatus !== "rejected" && (
+    <div className="mt-3 space-y-2">
+      <textarea
+        value={documentVerificationRemarks[document.id] || ""}
+        onChange={(event) =>
+          setDocumentVerificationRemarks((previous) => ({
+            ...previous,
+            [document.id]: event.target.value,
+          }))
+        }
+        placeholder="Enter document verification remarks..."
+        className="w-full rounded-lg border border-gray-300 p-2 text-sm dark:border-gray-700 dark:bg-gray-800"
+        rows={2}
+        maxLength={500}
+      />
+
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={
+            verifyingDocumentId === document.id ||
+            document.verificationStatus !== "readable"
+          }
+          onClick={() =>
+            handleVerifyAccountOpeningDocument(
+              application.id,
+              document.id,
+              "verified"
+            )
+          }
+          className="rounded-lg bg-green-600 px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {verifyingDocumentId === document.id
+            ? "Processing..."
+            : "Verify Document"}
+        </button>
+
+        <button
+          type="button"
+          disabled={verifyingDocumentId === document.id}
+          onClick={() =>
+            handleVerifyAccountOpeningDocument(
+              application.id,
+              document.id,
+              "rejected"
+            )
+          }
+          className="rounded-lg bg-red-600 px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Reject Document
+        </button>
+      </div>
+
+      {document.verificationStatus !== "readable" && (
+        <p className="text-xs text-amber-600">
+          This document must pass the readability check before it can be verified.
+        </p>
+      )}
+    </div>
+  )}
                           </div>
 
-                          <button
-                            type="button"
+                          <a
                             className="btn btn-sm btn-secondary"
-                            onClick={() =>
-                              window.open(
-                                `http://localhost:5000/api/staff/account-opening/${encodeURIComponent(
-                                  application.id
-                                )}/documents/${encodeURIComponent(
-                                  document.id
-                                )}`,
-                                "_blank",
-                                "noopener,noreferrer"
-                              )
-                            }
+                            href={api.getStaffAccountOpeningDocumentUrl(
+                              application.id,
+                              document.id
+                            )}
+                            target="_blank"
+                            rel="noopener noreferrer"
                           >
                             View Document
-                          </button>
+                          </a>
                         </div>
                       ))}
                     </div>
