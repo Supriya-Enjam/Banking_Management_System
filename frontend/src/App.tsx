@@ -207,6 +207,39 @@ const toggleTheme = useCallback(() => {
   const [pendingChatConversationId, setPendingChatConversationId] =
     useState<string | null>(null);
 
+   
+useEffect(() => {
+  const params = new URLSearchParams(window.location.search);
+  const conversationId = params.get("chatConversationId");
+
+  if (!conversationId) return;
+
+  setPendingChatConversationId(conversationId);
+
+  // Keep the URL clean after capturing the requested conversation.
+  window.history.replaceState(
+    {},
+    "",
+    window.location.pathname + window.location.hash
+  );
+}, []);
+
+
+useEffect(() => {
+  if (
+    !pendingChatConversationId ||
+    viewMode !== "app" ||
+    !customer ||
+    !["staff", "management", "admin"].includes(customer.role)
+  ) {
+    return;
+  }
+
+  setActivePage("messages");
+  setMobileMenuOpen(false);
+}, [pendingChatConversationId, viewMode, customer]);
+
+
   useEffect(() => {
     if (
       viewMode !== "app" ||

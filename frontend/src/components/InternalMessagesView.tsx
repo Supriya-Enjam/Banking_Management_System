@@ -15,6 +15,10 @@ import {
   X,
 } from "lucide-react";
 import {
+  enableDesktopPushNotifications,
+  disableDesktopPushNotifications,
+} from "../services/pushNotifications";
+import {
   api,
   type ChatConversation,
   type ChatEmployee,
@@ -63,6 +67,8 @@ export function InternalMessagesView({
   const [draft, setDraft] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const socketRef = useRef<Socket | null>(null);
@@ -801,6 +807,35 @@ export function InternalMessagesView({
     };
   }, [filePreviewUrl]);
 
+  
+
+// Desktop push notification controls
+const toggleDesktopNotifications = async () => {
+  setPushBusy(true);
+
+  try {
+    if (pushEnabled) {
+      const message = await disableDesktopPushNotifications();
+      setPushEnabled(false);
+      onToast(message);
+    } else {
+      const message = await enableDesktopPushNotifications();
+      setPushEnabled(true);
+      onToast(message);
+    }
+  } catch (notificationError) {
+    onToast(
+      notificationError instanceof Error
+        ? notificationError.message
+        : "Could not update desktop notification settings."
+    );
+  } finally {
+    setPushBusy(false);
+  }
+};
+
+
+
   return (
     <section className="internal-chat">
       <header className="internal-chat-heading">
@@ -812,14 +847,32 @@ export function InternalMessagesView({
           <p>Private conversations for authorized bank employees.</p>
         </div>
 
-        <div className={`chat-connection ${connectionState}`}>
-          <Circle size={9} fill="currentColor" />
-          {connectionState === "connected"
-            ? "Live"
-            : connectionState === "connecting"
-              ? "Connecting"
-              : "Reconnecting"}
-        </div>
+        <div className="chat-heading-actions">
+  <button
+    type="button"
+    className="btn btn-secondary"
+    onClick={() => void toggleDesktopNotifications()}
+    disabled={pushBusy}
+  >
+    {pushBusy ? (
+      <LoaderCircle className="chat-spin" size={16} />
+    ) : (
+      <MessageCircle size={16} />
+    )}
+    {pushEnabled
+      ? "Disable desktop notifications"
+      : "Enable desktop notifications"}
+  </button>
+
+  <div className={`chat-connection ${connectionState}`}>
+    <Circle size={9} fill="currentColor" />
+    {connectionState === "connected"
+      ? "Live"
+      : connectionState === "connecting"
+        ? "Connecting"
+        : "Reconnecting"}
+  </div>
+</div>
       </header>
 
       {error && (

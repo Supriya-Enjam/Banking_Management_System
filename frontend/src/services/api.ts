@@ -1506,6 +1506,40 @@ reviewAccountOpeningApplication(
     );
   },
 
+
+  // -------------------------------------------------------
+  // DESKTOP PUSH NOTIFICATIONS
+  // -------------------------------------------------------
+
+  getPushNotificationPublicKey() {
+    return request<{ success: boolean; publicKey: string }>(
+      "/push-notifications/public-key"
+    );
+  },
+
+  subscribeToPushNotifications(
+    subscription: PushSubscriptionJSON
+  ) {
+    return request<{ success: boolean; message: string }>(
+      "/push-notifications/subscribe",
+      {
+        method: "POST",
+        body: JSON.stringify(subscription),
+      }
+    );
+  },
+
+  unsubscribeFromPushNotifications(endpoint: string) {
+    return request<{ success: boolean; message: string }>(
+      "/push-notifications/unsubscribe",
+      {
+        method: "DELETE",
+        body: JSON.stringify({ endpoint }),
+      }
+    );
+  },
+
+
   // -------------------------------------------------------
   // NOTIFICATIONS
   // -------------------------------------------------------

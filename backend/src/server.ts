@@ -22,6 +22,7 @@ import { AUTH_COOKIE_NAME } from "./utils/authCookie";
 import accountOpeningRoutes from "./routes/accountOpeningRoutes";
 import staffAccountOpeningRoutes from "./routes/staffAccountOpeningRoutes";
 import chatRoutes from "./routes/chatRoutes";
+import pushNotificationRoutes from "./routes/pushNotificationRoutes";
 import { initializeChatSocketServer } from "./services/chatSocket";
 
 const app = express();
@@ -101,7 +102,7 @@ app.use("/api/staff/account-opening", staffAccountOpeningRoutes);
 app.use("/api/cards/debit", debitCardRoutes);
 app.use("/api/cards/credit", creditCardRoutes);
 app.use("/api/account-opening", accountOpeningRoutes);
-
+app.use("/api/push-notifications", pushNotificationRoutes);
 initializeChatSocketServer(httpServer, [...allowedOrigins]);
 
 app.get("/", (_req: Request, res: Response) => {

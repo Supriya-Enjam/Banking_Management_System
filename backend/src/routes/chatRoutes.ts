@@ -20,6 +20,9 @@ import {
   isEmployeeOnline,
 } from "../services/chatSocket";
 
+import { PushSubscription } from "../models/PushSubscription";
+import { sendPushNotification } from "../services/pushNotifications";
+
 const chatRoutes = Router();
 const EMPLOYEE_ROLES = ["staff", "management", "admin"] as const;
 const MESSAGE_PAGE_SIZE = 50;
@@ -1038,22 +1041,67 @@ if (req.file) {
           ? `Attachment: ${attachment.originalName}`
           : "Open the chat to view it.";
 
+      
       await Promise.all(
-        recipients.map((recipientId) =>
-          createChatNotification(recipientId, {
-            title: sender?.name
-              ? `New message from ${sender.name}`
-              : "New employee chat message",
-            message: notificationMessage,
-            eventType: "message",
-            conversationId,
-            relatedMessageId: String(message._id),
-            dedupeKey: `message:${message._id}`,
-          })
-        )
+        recipients.map(async (recipientId) => {
+          try {
+            await createChatNotification(recipientId, {
+              title: sender?.name
+                ? `New message from ${sender.name}`
+                : "New employee chat message",
+              message: notificationMessage,
+              eventType: "message",
+              conversationId,
+              relatedMessageId: String(message._id),
+              dedupeKey: `message:${message._id}`,
+            });
+
+            const subscriptions = await PushSubscription.find({
+              customerId: recipientId,
+            }).lean();
+
+            await Promise.all(
+              subscriptions.map(async (subscription) => {
+                try {
+                  console.log("Chat push debug:", {
+  senderRole: sender?.role,
+  recipientId,
+  conversationId,
+  notificationUrl: `/?chatConversationId=${encodeURIComponent(conversationId)}`,
+});
+                  const sent = await sendPushNotification(
+                    {
+                      endpoint: subscription.endpoint,
+                      expirationTime: subscription.expirationTime,
+                      keys: subscription.keys,
+                    },
+                    {
+                      title: sender?.name
+                        ? `New message from ${sender.name}`
+                        : "New employee chat message",
+                      body: "Open VaultBank to view your new message.",
+                      url: `/?chatConversationId=${encodeURIComponent(conversationId)}`,
+                    }
+                  );
+
+                  if (!sent) {
+                    console.warn(
+                      "Push notification was not delivered to a subscription."
+                    );
+                  }
+                } catch {
+                  console.warn("Could not deliver a chat push notification.");
+                }
+              })
+            );
+          } catch (notificationError) {
+            logChatFailure("push notification delivery", notificationError);
+          }
+        })
       );
 
       res.status(201).json({ success: true, message: serialized });
+
         } catch (error) {
       if (!messageSaved) {
         await removeUploadedFile(req.file);
