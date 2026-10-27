@@ -1,0 +1,71 @@
+.support-page {
+  display: grid;
+  gap: 22px;
+}
+
+.support-heading > span {
+  color: var(--sapphire);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.support-heading h1 {
+  margin: 4px 0;
+  font-size: clamp(24px, 3vw, 32px);
+}
+
+.support-heading p,
+.support-privacy {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.support-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+  gap: 14px;
+}
+
+.support-card {
+  min-height: 170px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.support-card > svg {
+  color: var(--sapphire);
+}
+
+.support-card h2 {
+  margin: 13px 0 8px;
+  font-size: 15px;
+}
+
+.support-card p,
+.support-card a {
+  margin: 0;
+  color: var(--text-main);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.support-card a {
+  color: var(--sapphire);
+  font-weight: 700;
+}
+
+.support-card .support-config {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.support-privacy {
+  border-left: 3px solid var(--amber);
+  padding: 10px 13px;
+  background: var(--amber-subtle);
+}

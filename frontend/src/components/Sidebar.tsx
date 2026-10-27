@@ -17,6 +17,8 @@ import {
   Monitor,
   ShieldCheck,
   Building2,
+  MessageSquare,
+  LifeBuoy,
 } from "lucide-react";
 
 import type { Customer } from "../services/api";
@@ -68,6 +70,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           icon: FileText,
         },
         {
+          id: "messages",
+          label: "Internal Messages",
+          icon: MessageSquare,
+        },
+        {
           id: "transactions",
           label: "All Transactions",
           icon: Activity,
@@ -92,6 +99,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           id: "transactions",
           label: "Transaction Monitoring",
           icon: Activity,
+        },
+        {
+          id: "messages",
+          label: "Internal Messages",
+          icon: MessageSquare,
         },
         {
           id: "profile",
@@ -128,6 +140,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           id: "transactions",
           label: "Transaction Stream",
           icon: Activity,
+        },
+        {
+          id: "messages",
+          label: "Internal Messages",
+          icon: MessageSquare,
         },
         {
           id: "profile",
@@ -193,6 +210,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
         id: "sessions",
         label: "Active Sessions",
         icon: Monitor,
+      },
+      {
+        id: "support",
+        label: "Help & Support",
+        icon: LifeBuoy,
       },
       {
         id: "profile",

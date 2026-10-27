@@ -24,6 +24,7 @@ interface HeaderProps {
   onOpenMobileMenu: () => void;
   onSelectRole: (role: "customer" | "staff" | "management"| "admin") => void;
   onMarkAllNotificationsRead: () => void;
+  onOpenNotification: (notification: NotificationItem) => void;
   onNavigate: (page: string) => void;
   onGoToLanding?: () => void;
   onLogout: () => void;
@@ -38,6 +39,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenMobileMenu,
   onSelectRole,
   onMarkAllNotificationsRead,
+  onOpenNotification,
   onNavigate,
   onGoToLanding,
   onLogout,
@@ -241,11 +243,24 @@ export const Header: React.FC<HeaderProps> = ({
                   </div>
                 ) : (
                   notifications.map((notification) => (
-                    <div
+                    <button
+                      type="button"
                       key={notification.id}
                       className={`notification-item ${
                         notification.read ? "" : "unread"
                       }`}
+                      onClick={() => {
+                        setShowNotifications(false);
+                        onOpenNotification(notification);
+                      }}
+                      style={{
+                        width: "100%",
+                        border: 0,
+                        color: "inherit",
+                        font: "inherit",
+                        textAlign: "left",
+                        cursor: "pointer",
+                      }}
                     >
                       <div
                         className="notification-icon"
@@ -285,7 +300,7 @@ export const Header: React.FC<HeaderProps> = ({
                           })}
                         </div>
                       </div>
-                    </div>
+                    </button>
                   ))
                 )}
               </div>

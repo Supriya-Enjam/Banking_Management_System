@@ -20,8 +20,28 @@ const notificationSchema = new Schema(
     },
     type: {
       type: String,
-      enum: ["transaction", "security", "loan", "system"],
+      enum: ["transaction", "security", "loan", "system", "chat"],
       default: "transaction",
+    },
+    eventType: {
+      type: String,
+      enum: ["message", "group_added", "group_removed"],
+      default: null,
+    },
+    conversationId: {
+      type: Schema.Types.ObjectId,
+      ref: "ChatConversation",
+      default: null,
+    },
+    relatedMessageId: {
+      type: Schema.Types.ObjectId,
+      ref: "ChatMessage",
+      default: null,
+    },
+    dedupeKey: {
+      type: String,
+      default: null,
+      maxlength: 160,
     },
     read: {
       type: Boolean,
@@ -32,6 +52,10 @@ const notificationSchema = new Schema(
 );
 
 notificationSchema.index({ customerId: 1, createdAt: -1 });
+notificationSchema.index(
+  { customerId: 1, dedupeKey: 1 },
+  { unique: true, partialFilterExpression: { dedupeKey: { $type: "string" } } }
+);
 
 export type NotificationDocument = InferSchemaType<typeof notificationSchema>;
 

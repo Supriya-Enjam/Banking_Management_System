@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { io } from "socket.io-client";
 import {
   BrowserRouter,
   Routes,
@@ -26,6 +27,8 @@ import { ReceiptModal } from "./components/ReceiptModal";
 import { StatementModal } from "./components/StatementModal";
 import ActiveSessionsView from "./components/ActiveSessionsView";
 import { SessionExpiryCard } from "./components/SessionExpiryCard";
+import { InternalMessagesView } from "./components/InternalMessagesView";
+import { HelpSupportView } from "./components/HelpSupportView";
 
 import CardsView from "./components/CardsView";
 import CreditCardApplicationView from "./components/CreditCardApplicationView";
@@ -197,9 +200,69 @@ const toggleTheme = useCallback(() => {
   // --------------------------------------------------
   // Notifications
   // --------------------------------------------------
-
+  const [chatPopup, setChatPopup] = useState<NotificationItem | null>(null);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
+  const notificationIdsRef = useRef(new Set<string>());
+  const [pendingChatConversationId, setPendingChatConversationId] =
+    useState<string | null>(null);
+
+  useEffect(() => {
+    if (
+      viewMode !== "app" ||
+      !customer ||
+      !["staff", "management", "admin"].includes(customer.role)
+    ) {
+      return;
+    }
+
+    const socket = io(api.getChatSocketUrl(), {
+      withCredentials: true,
+      transports: ["websocket", "polling"],
+      reconnection: true,
+      reconnectionAttempts: 8,
+    });
+    socket.on("connect", () => {
+      void api
+        .getNotifications(token)
+        .then((result) => {
+          notificationIdsRef.current = new Set(
+            result.notifications.map((notification) => notification.id)
+          );
+          setNotifications(result.notifications);
+          setUnreadNotificationsCount(result.unreadCount);
+        })
+        .catch((error: unknown) => {
+          console.error("Could not resynchronize employee notifications.", error);
+        });
+    });
+    
+socket.on("chat:notification", (notification: NotificationItem) => {
+  const alreadyReceived = notificationIdsRef.current.has(notification.id);
+
+  if (!alreadyReceived) {
+    notificationIdsRef.current.add(notification.id);
+
+    setNotifications((previous) =>
+      [notification, ...previous].slice(0, 30)
+    );
+
+    if (!notification.read) {
+      setUnreadNotificationsCount((previous) => previous + 1);
+    }
+  }
+
+  // Always show the popup for incoming chat notifications.
+  if (notification.type === "chat") {
+    setChatPopup(notification);
+  }
+});
+    
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [viewMode, customer?.id, customer?.role, token]);
 
   // --------------------------------------------------
   // Navigation
@@ -293,6 +356,7 @@ const toggleTheme = useCallback(() => {
       setFixedDeposits([]);
 
       setNotifications([]);
+      notificationIdsRef.current.clear();
       setUnreadNotificationsCount(0);
 
       setActiveReceipt(null);
@@ -343,6 +407,9 @@ const toggleTheme = useCallback(() => {
 
       if (notificationResponse) {
         setNotifications(notificationResponse.notifications || []);
+        notificationIdsRef.current = new Set(
+          notificationResponse.notifications.map((notification) => notification.id)
+        );
         setUnreadNotificationsCount(notificationResponse.unreadCount || 0);
       }
 
@@ -598,6 +665,7 @@ const toggleTheme = useCallback(() => {
     setLoans([]);
     setFixedDeposits([]);
     setNotifications([]);
+    notificationIdsRef.current.clear();
     setUnreadNotificationsCount(0);
   };
 
@@ -765,6 +833,41 @@ const toggleTheme = useCallback(() => {
     }
   };
 
+  const handleOpenNotification = async (
+    notification: NotificationItem
+  ) => {
+    if (!token) return;
+
+    if (!notification.read) {
+      try {
+        await api.markNotificationRead(token, notification.id);
+        setNotifications((previous) =>
+          previous.map((item) =>
+            item.id === notification.id ? { ...item, read: true } : item
+          )
+        );
+        setUnreadNotificationsCount((previous) => Math.max(0, previous - 1));
+      } catch (error: unknown) {
+        showToast(
+          error instanceof Error
+            ? error.message
+            : "Could not mark the notification as read."
+        );
+      }
+    }
+
+    if (
+      notification.type === "chat" &&
+      notification.conversationId &&
+      customer &&
+      ["staff", "management", "admin"].includes(customer.role)
+    ) {
+      setPendingChatConversationId(notification.conversationId);
+      setActivePage("messages");
+      setMobileMenuOpen(false);
+    }
+  };
+
   // --------------------------------------------------
   // Navigation handlers
   // --------------------------------------------------
@@ -916,6 +1019,7 @@ const toggleTheme = useCallback(() => {
           onOpenMobileMenu={() => setMobileMenuOpen(true)}
           onSelectRole={handleQuickRoleSwitch}
           onMarkAllNotificationsRead={handleMarkAllNotificationsRead}
+          onOpenNotification={handleOpenNotification}
           onNavigate={handleNavigate}
           onGoToLanding={() => setViewMode("landing")}
           onLogout={handleLogout}
@@ -1046,6 +1150,7 @@ const toggleTheme = useCallback(() => {
                   }
                 />
               )}
+              {activePage === "support" && <HelpSupportView />}
             </>
           )}
 
@@ -1134,6 +1239,8 @@ const toggleTheme = useCallback(() => {
           )}
 
           {/* MANAGEMENT PORTAL */}
+          
+          {/* MANAGEMENT PORTAL */}
           {customer.role === "management" && (
             <>
               {activePage === "management" && (
@@ -1168,6 +1275,17 @@ const toggleTheme = useCallback(() => {
             </>
           )}
 
+          {/* INTERNAL MESSAGES — STAFF, MANAGEMENT, AND ADMIN */}
+          {["staff", "management", "admin"].includes(customer.role) &&
+            activePage === "messages" && (
+              <InternalMessagesView
+                token={token}
+                employeeId={customer.id}
+                initialConversationId={pendingChatConversationId}
+                onToast={showToast}
+              />
+            )}
+
           {/* Allow admins to open the management dashboard too. */}
           {customer.role === "admin" && activePage === "management" && (
             <ManagementDashboardView
@@ -1176,6 +1294,7 @@ const toggleTheme = useCallback(() => {
             />
           )}
         </main>
+
       </div>
 
       {/* Receipt modal */}
@@ -1208,6 +1327,44 @@ const toggleTheme = useCallback(() => {
           {toastMessage}
         </div>
       )}
+
+{/* Real-time chat popup */}
+{chatPopup && (
+  <div className="chat-notification-popup" role="alert">
+    <div className="chat-notification-popup__icon">
+      💬
+    </div>
+
+    <div className="chat-notification-popup__content">
+      <strong>New message</strong>
+      <p>{chatPopup.title}</p>
+      <p>{chatPopup.message}</p>
+
+      <button
+        type="button"
+        onClick={() => {
+          const notification = chatPopup;
+          setChatPopup(null);
+          void handleOpenNotification(notification);
+        }}
+      >
+        Open conversation
+      </button>
+    </div>
+
+    <button
+      type="button"
+      className="chat-notification-popup__close"
+      aria-label="Close notification"
+      onClick={() => setChatPopup(null)}
+    >
+      ×
+    </button>
+  </div>
+)}
+
+
+
     </div>
   );
 }

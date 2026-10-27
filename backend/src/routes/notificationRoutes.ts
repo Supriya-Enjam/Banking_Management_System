@@ -9,15 +9,25 @@ notificationRoutes.use(authenticate);
 // Get user notifications
 notificationRoutes.get("/", async (_req: Request, res: Response): Promise<void> => {
   try {
-    const customerId = res.locals.authenticatedUser?.customerId;
+    const user = res.locals.authenticatedUser;
+    const customerId = user?.customerId;
     if (!customerId) {
       res.status(401).json({ success: false, message: "Authentication required." });
       return;
     }
 
+    const notificationQuery = Notification.find({ customerId });
+    const unreadQuery = Notification.countDocuments({
+      customerId,
+      read: false,
+    });
+    if (user.role === "customer") {
+      notificationQuery.where("type").ne("chat");
+      unreadQuery.where("type").ne("chat");
+    }
     const [notifications, unreadCount] = await Promise.all([
-      Notification.find({ customerId }).sort({ createdAt: -1 }).limit(30).lean(),
-      Notification.countDocuments({ customerId, read: false }),
+      notificationQuery.sort({ createdAt: -1 }).limit(30),
+      unreadQuery,
     ]);
 
     res.json({
@@ -28,6 +38,11 @@ notificationRoutes.get("/", async (_req: Request, res: Response): Promise<void> 
         title: n.title,
         message: n.message,
         type: n.type,
+        eventType: n.eventType ?? null,
+        conversationId: n.conversationId ? String(n.conversationId) : null,
+        relatedMessageId: n.relatedMessageId
+          ? String(n.relatedMessageId)
+          : null,
         read: n.read,
         createdAt: n.createdAt,
       })),
@@ -43,7 +58,22 @@ notificationRoutes.patch("/:id/read", async (req: Request, res: Response): Promi
     const { id } = req.params;
     const customerId = res.locals.authenticatedUser?.customerId;
 
-    await Notification.findOneAndUpdate({ _id: id, customerId }, { read: true });
+    const filter: Record<string, unknown> = { _id: id, customerId };
+    if (res.locals.authenticatedUser?.role === "customer") {
+      filter.type = { $ne: "chat" };
+    }
+    const notification = await Notification.findOneAndUpdate(
+      filter,
+      { read: true }
+    );
+
+    if (!notification) {
+      res.status(404).json({
+        success: false,
+        message: "Notification not found.",
+      });
+      return;
+    }
 
     res.json({ success: true, message: "Notification marked as read." });
   } catch (error) {
@@ -55,7 +85,11 @@ notificationRoutes.patch("/:id/read", async (req: Request, res: Response): Promi
 notificationRoutes.post("/mark-all-read", async (_req: Request, res: Response): Promise<void> => {
   try {
     const customerId = res.locals.authenticatedUser?.customerId;
-    await Notification.updateMany({ customerId, read: false }, { read: true });
+    const filter: Record<string, unknown> = { customerId, read: false };
+    if (res.locals.authenticatedUser?.role === "customer") {
+      filter.type = { $ne: "chat" };
+    }
+    await Notification.updateMany(filter, { read: true });
 
     res.json({ success: true, message: "All notifications marked as read." });
   } catch (error) {

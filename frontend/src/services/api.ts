@@ -136,9 +136,59 @@ export interface NotificationItem {
   id: string;
   title: string;
   message: string;
-  type: "transaction" | "security" | "loan" | "system";
+  type: "transaction" | "security" | "loan" | "system" | "chat";
+  eventType?: "message" | "group_added" | "group_removed" | null;
+  conversationId?: string | null;
+  relatedMessageId?: string | null;
   read: boolean;
   createdAt: string;
+}
+
+export interface ChatEmployee {
+  id: string;
+  name: string;
+  employeeId: string;
+  role: "staff" | "management" | "admin";
+  online: boolean;
+}
+
+export interface ChatParticipant extends ChatEmployee {
+  isAdmin: boolean;
+}
+
+export interface ChatConversation {
+  id: string;
+  type: "personal" | "group";
+  name: string;
+  description: string;
+  participantCount: number;
+  participants: ChatParticipant[];
+  isAdmin: boolean;
+  unreadCount: number;
+  lastMessagePreview: string;
+  lastMessageAt: string | null;
+  lastMessageSenderId: string | null;
+  createdAt: string;
+}
+
+export interface ChatReactionSummary {
+  emoji: string;
+  count: number;
+  reactedByMe: boolean;
+}
+
+export interface ChatMessageItem {
+  id: string;
+  conversationId: string;
+  sender: {
+    id: string;
+    name: string;
+    role: string;
+  };
+  content: string;
+  reactions: ChatReactionSummary[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface AuditLogItem {
@@ -1464,6 +1514,136 @@ reviewAccountOpeningApplication(
     return request<{ success: boolean; message: string }>(
       `/notifications/${encodeURIComponent(id)}/read`,
       { method: "PATCH" },
+      token
+    );
+  },
+
+  getChatSocketUrl() {
+    return new URL(API_BASE_URL, window.location.origin).origin;
+  },
+
+  getChatEmployees(token: string, query = "") {
+    const search = new URLSearchParams();
+    if (query) search.set("q", query);
+    return request<{ success: boolean; employees: ChatEmployee[] }>(
+      `/chat/employees${search.size ? `?${search}` : ""}`,
+      {},
+      token
+    );
+  },
+
+  getChatConversations(token: string) {
+    return request<{ success: boolean; conversations: ChatConversation[] }>(
+      "/chat/conversations",
+      {},
+      token
+    );
+  },
+
+  createDirectChat(token: string, employeeId: string) {
+    return request<{
+      success: boolean;
+      conversation: { id: string };
+    }>(
+      `/chat/direct/${encodeURIComponent(employeeId)}`,
+      { method: "POST" },
+      token
+    );
+  },
+
+  createChatGroup(
+    token: string,
+    data: { name: string; description: string; memberIds: string[] }
+  ) {
+    return request<{
+      success: boolean;
+      conversation: { id: string };
+    }>(
+      "/chat/groups",
+      { method: "POST", body: JSON.stringify(data) },
+      token
+    );
+  },
+
+  getChatMessages(token: string, conversationId: string, before?: string) {
+    const query = new URLSearchParams({ limit: "50" });
+    if (before) query.set("before", before);
+    return request<{
+      success: boolean;
+      messages: ChatMessageItem[];
+      nextCursor: string | null;
+    }>(
+      `/chat/${encodeURIComponent(conversationId)}/messages?${query}`,
+      {},
+      token
+    );
+  },
+
+  sendChatMessage(token: string, conversationId: string, content: string) {
+    return request<{ success: boolean; message: ChatMessageItem }>(
+      `/chat/${encodeURIComponent(conversationId)}/messages`,
+      { method: "POST", body: JSON.stringify({ content }) },
+      token
+    );
+  },
+
+  markChatConversationRead(token: string, conversationId: string) {
+    return request<{ success: boolean; readAt: string }>(
+      `/chat/${encodeURIComponent(conversationId)}/read`,
+      { method: "POST" },
+      token
+    );
+  },
+
+  setChatReaction(
+    token: string,
+    messageId: string,
+    emoji: string | null
+  ) {
+    return request<{
+      success: boolean;
+      messageId: string;
+      conversationId: string;
+      reactions: ChatReactionSummary[];
+    }>(
+      `/chat/messages/${encodeURIComponent(messageId)}/reaction`,
+      { method: "PATCH", body: JSON.stringify({ emoji }) },
+      token
+    );
+  },
+
+  addChatGroupMember(
+    token: string,
+    conversationId: string,
+    employeeId: string,
+    isAdmin = false
+  ) {
+    return request<{ success: boolean; message: string }>(
+      `/chat/${encodeURIComponent(conversationId)}/members`,
+      {
+        method: "POST",
+        body: JSON.stringify({ employeeId, isAdmin }),
+      },
+      token
+    );
+  },
+
+  removeChatGroupMember(
+    token: string,
+    conversationId: string,
+    employeeId: string
+  ) {
+    return request<{ success: boolean; message: string }>(
+      `/chat/${encodeURIComponent(conversationId)}/members/${encodeURIComponent(employeeId)}`,
+      { method: "DELETE" },
+      token
+    );
+  },
+
+  leaveChatGroup(token: string, conversationId: string) {
+    return request<{ success: boolean; message: string }>(
+      `/chat/${encodeURIComponent(conversationId)}/leave`,
+      { method: "POST" },
       token
     );
   },

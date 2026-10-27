@@ -154,3 +154,23 @@ suffix, for example `http://localhost:5000/api`.
 The API uses credentialed CORS for the configured frontend origin and validates
 request origins on state-changing operations. Authenticated browser requests
 must include their Origin header.
+
+## Internal employee chat
+
+Socket.IO chat is available only to active `staff`, `management`, and `admin`
+sessions. It uses the existing HTTP-only `vaultbank_token` cookie and the
+existing database session; no additional chat token or public document route
+is used. Start the backend and frontend with the commands above. Configure the
+frontend's exact public support contacts only when approved values are
+available:
+
+```text
+VITE_SUPPORT_PHONE=
+VITE_SUPPORT_EMAIL=
+VITE_SUPPORT_HOURS=
+VITE_EMERGENCY_PHONE=
+```
+
+If these values are unset, the customer Help & Support page shows configuration
+placeholders rather than invented contact details. Keep frontend environment
+values free of secrets.

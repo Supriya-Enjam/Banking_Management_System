@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { createServer } from "node:http";
 import express, { type Request, type Response } from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -20,8 +21,11 @@ import { AUTH_COOKIE_NAME } from "./utils/authCookie";
 
 import accountOpeningRoutes from "./routes/accountOpeningRoutes";
 import staffAccountOpeningRoutes from "./routes/staffAccountOpeningRoutes";
+import chatRoutes from "./routes/chatRoutes";
+import { initializeChatSocketServer } from "./services/chatSocket";
 
 const app = express();
+const httpServer = createServer(app);
 const PORT = Number(process.env.PORT) || 5000;
 
 app.use(helmet());
@@ -90,12 +94,15 @@ app.use("/api/beneficiaries", beneficiaryRoutes);
 app.use("/api/loans", loanRoutes);
 app.use("/api/fixed-deposits", fixedDepositRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/chat", chatRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/staff", staffRoutes);
 app.use("/api/staff/account-opening", staffAccountOpeningRoutes);
 app.use("/api/cards/debit", debitCardRoutes);
 app.use("/api/cards/credit", creditCardRoutes);
 app.use("/api/account-opening", accountOpeningRoutes);
+
+initializeChatSocketServer(httpServer, [...allowedOrigins]);
 
 app.get("/", (_req: Request, res: Response) => {
   res.json({
@@ -118,7 +125,7 @@ async function startServer(): Promise<void> {
     await connectDatabase();
     await seedInitialData();
 
-    app.listen(PORT, () => {
+    httpServer.listen(PORT, () => {
       console.log(`🚀 VaultBank API running at http://localhost:${PORT}`);
       console.log(`🩺 Health check: http://localhost:${PORT}/api/health`);
     });
