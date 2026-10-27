@@ -177,6 +177,7 @@ export interface ChatReactionSummary {
   reactedByMe: boolean;
 }
 
+
 export interface ChatMessageItem {
   id: string;
   conversationId: string;
@@ -186,10 +187,17 @@ export interface ChatMessageItem {
     role: string;
   };
   content: string;
+  attachment?: {
+    originalName: string;
+    mimeType: string;
+    sizeBytes: number;
+    downloadUrl: string;
+  } | null;
   reactions: ChatReactionSummary[];
   createdAt: string;
   updatedAt: string;
 }
+
 
 export interface AuditLogItem {
   id: string;
@@ -1579,13 +1587,30 @@ reviewAccountOpeningApplication(
     );
   },
 
-  sendChatMessage(token: string, conversationId: string, content: string) {
-    return request<{ success: boolean; message: ChatMessageItem }>(
-      `/chat/${encodeURIComponent(conversationId)}/messages`,
-      { method: "POST", body: JSON.stringify({ content }) },
-      token
-    );
-  },
+ 
+sendChatMessage(
+  token: string,
+  conversationId: string,
+  content: string,
+  file?: File | null
+) {
+  const formData = new FormData();
+  formData.append("content", content);
+
+  if (file) {
+    formData.append("attachment", file);
+  }
+
+  return request<{ success: boolean; message: ChatMessageItem }>(
+    `/chat/${encodeURIComponent(conversationId)}/messages`,
+    {
+      method: "POST",
+      body: formData,
+    },
+    token
+  );
+},
+
 
   markChatConversationRead(token: string, conversationId: string) {
     return request<{ success: boolean; readAt: string }>(

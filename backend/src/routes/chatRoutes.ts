@@ -8,6 +8,11 @@ import { ChatConversation } from "../models/ChatConversation";
 import { ChatMessage } from "../models/ChatMessage";
 import { ChatReaction, CHAT_REACTIONS } from "../models/ChatReaction";
 import { Notification } from "../models/Notification";
+import multer from "multer";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, unlink } from "node:fs/promises";
+import { createReadStream } from "node:fs";
 import {
   disconnectEmployeeFromConversation,
   emitChatEvent,
@@ -19,6 +24,118 @@ const chatRoutes = Router();
 const EMPLOYEE_ROLES = ["staff", "management", "admin"] as const;
 const MESSAGE_PAGE_SIZE = 50;
 const MAX_GROUP_MEMBERS = 50;
+
+const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
+
+const CHAT_UPLOAD_DIR = path.resolve(
+  process.cwd(),
+  "private-uploads",
+  "chat"
+);
+
+const ALLOWED_ATTACHMENT_TYPES: Record<string, string[]> = {
+  "image/jpeg": [".jpg", ".jpeg"],
+  "image/png": [".png"],
+  "image/webp": [".webp"],
+  "application/pdf": [".pdf"],
+  "text/plain": [".txt"],
+  "text/csv": [".csv"],
+};
+
+const chatUpload = multer({
+  storage: multer.diskStorage({
+    
+destination: (_req, _file, callback) => {
+  mkdir(CHAT_UPLOAD_DIR, { recursive: true })
+    .then(() => callback(null, CHAT_UPLOAD_DIR))
+    .catch(() =>
+      callback(new Error("Could not prepare attachment storage."), "")
+    );
+},
+
+    filename: (_req, _file, callback) => {
+      callback(null, randomUUID());
+    },
+  }),
+  limits: {
+    fileSize: MAX_ATTACHMENT_SIZE,
+    files: 1,
+    fields: 1,
+    parts: 2,
+  },
+  fileFilter: (_req, file, callback) => {
+    const extension = path.extname(file.originalname).toLowerCase();
+    const allowedExtensions = ALLOWED_ATTACHMENT_TYPES[file.mimetype];
+
+    if (!allowedExtensions?.includes(extension)) {
+      callback(
+        new Error(
+          "Unsupported attachment type. Allowed: JPG, PNG, WEBP, PDF, TXT, and CSV."
+        )
+      );
+      return;
+    }
+
+    callback(null, true);
+  },
+});
+
+
+
+async function removeUploadedFile(
+  file?: Express.Multer.File
+): Promise<void> {
+  if (!file?.path) return;
+
+  await unlink(file.path).catch(() => undefined);
+}
+
+async function validateUploadedFile(
+  file: Express.Multer.File
+): Promise<boolean> {
+  const extension = path.extname(file.originalname).toLowerCase();
+  const buffer = await readFile(file.path);
+
+  if (extension === ".jpg" || extension === ".jpeg") {
+    return (
+      buffer.length >= 3 &&
+      buffer[0] === 0xff &&
+      buffer[1] === 0xd8 &&
+      buffer[2] === 0xff
+    );
+  }
+
+  if (extension === ".png") {
+    return (
+      buffer.length >= 8 &&
+      buffer.subarray(0, 8).equals(
+        Buffer.from([
+          0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+        ])
+      )
+    );
+  }
+
+  if (extension === ".webp") {
+    return (
+      buffer.length >= 12 &&
+      buffer.toString("ascii", 0, 4) === "RIFF" &&
+      buffer.toString("ascii", 8, 12) === "WEBP"
+    );
+  }
+
+  if (extension === ".pdf") {
+    return buffer.subarray(0, 5).toString("ascii") === "%PDF-";
+  }
+
+  if (extension === ".txt" || extension === ".csv") {
+    return !buffer.includes(0);
+  }
+
+  return false;
+}
+
+
 
 const messageLimiter = rateLimit({
   windowMs: 60_000,
@@ -38,9 +155,8 @@ const groupSchema = z.object({
 });
 
 const messageSchema = z.object({
-  content: z.string().trim().min(1).max(4000),
+  content: z.string().trim().max(4000).default(""),
 });
-
 const reactionSchema = z.object({
   emoji: z.union([z.enum(CHAT_REACTIONS), z.null()]),
 });
@@ -451,7 +567,9 @@ chatRoutes.post("/groups", async (req: Request, res: Response) => {
   try {
     const parsed = groupSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({
+  await removeUploadedFile(req.file);
+
+  res.status(400).json({
         success: false,
         message: parsed.error.issues[0]?.message ?? "Invalid group details.",
       });
@@ -579,10 +697,20 @@ chatRoutes.get("/:conversationId/messages", async (req: Request, res: Response) 
         name: message.senderId?.name ?? "Employee",
         role: message.senderId?.role ?? "staff",
       },
-      content: message.content,
-      reactions: reactionMap.get(String(message._id)) ?? [],
-      createdAt: message.createdAt,
-      updatedAt: message.updatedAt,
+     
+content: message.content,
+attachment: message.attachment
+  ? {
+      originalName: message.attachment.originalName,
+      mimeType: message.attachment.mimeType,
+      sizeBytes: message.attachment.sizeBytes,
+      downloadUrl: `/api/chat/messages/${message._id}/attachment`,
+    }
+  : null,
+reactions: reactionMap.get(String(message._id)) ?? [],
+createdAt: message.createdAt,
+updatedAt: message.updatedAt,
+
     }));
 
     res.json({
@@ -599,12 +727,186 @@ chatRoutes.get("/:conversationId/messages", async (req: Request, res: Response) 
   }
 });
 
+
+
+async function verifyChatUploadMembership(
+  req: Request,
+  res: Response,
+  next: (error?: unknown) => void
+) {
+  try {
+    const employeeId = getEmployeeId(res);
+    const conversationId = getRouteParam(req, "conversationId");
+
+    if (!employeeId) {
+      res.status(403).json({
+        success: false,
+        message: "Active employee access required.",
+      });
+      return;
+    }
+
+    const conversation = await findMembership(conversationId, employeeId);
+
+    if (!conversation) {
+      res.status(isValidId(conversationId) ? 404 : 400).json({
+        success: false,
+        message: "Conversation not found.",
+      });
+      return;
+    }
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+}
+
+
+chatRoutes.get(
+  "/messages/:messageId/attachment",
+  async (req: Request, res: Response) => {
+    try {
+      const employeeId = getEmployeeId(res);
+      const messageId = getRouteParam(req, "messageId");
+
+      if (!employeeId) {
+        res.status(403).json({
+          success: false,
+          message: "Active employee access required.",
+        });
+        return;
+      }
+
+      if (!isValidId(messageId)) {
+        res.status(400).json({
+          success: false,
+          message: "Invalid message ID.",
+        });
+        return;
+      }
+
+      const message = await ChatMessage.findById(messageId)
+        .select("+attachment.storageName")
+        .exec();
+
+      if (!message?.attachment) {
+        res.status(404).json({
+          success: false,
+          message: "Attachment not found.",
+        });
+        return;
+      }
+
+      const conversationId = String(message.conversationId);
+      const conversation = await findMembership(
+        conversationId,
+        employeeId
+      );
+
+      if (!conversation) {
+        res.status(404).json({
+          success: false,
+          message: "Attachment not found.",
+        });
+        return;
+      }
+
+      const storageName = message.attachment.storageName;
+
+      if (
+        !storageName ||
+        !/^[0-9a-f-]{36}$/i.test(storageName) ||
+        path.basename(storageName) !== storageName
+      ) {
+        res.status(404).json({
+          success: false,
+          message: "Attachment not found.",
+        });
+        return;
+      }
+
+      const filePath = path.join(CHAT_UPLOAD_DIR, storageName);
+
+      res.setHeader("Content-Type", "application/octet-stream");
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename*=UTF-8''${encodeURIComponent(
+          path.basename(message.attachment.originalName)
+        )}`
+      );
+
+      const stream = createReadStream(filePath);
+
+      stream.on("error", () => {
+        if (!res.headersSent) {
+          res.status(404).json({
+            success: false,
+            message: "Attachment file not found.",
+          });
+        } else {
+          res.destroy();
+        }
+      });
+
+      stream.pipe(res);
+    } catch (error) {
+      logChatFailure("attachment download", error);
+
+      if (!res.headersSent) {
+        res.status(500).json({
+          success: false,
+          message: "Could not download the attachment.",
+        });
+      }
+    }
+  }
+);
+
+
 chatRoutes.post(
   "/:conversationId/messages",
   messageLimiter,
-  async (req: Request, res: Response) => {
+  verifyChatUploadMembership,
+  (req: Request, res: Response, next) => {
+    chatUpload.single("attachment")(req, res, (error) => {
+      if (error) {
+        if (error instanceof multer.MulterError) {
+          res.status(400).json({
+            success: false,
+            message:
+              error.code === "LIMIT_FILE_SIZE"
+                ? "Attachments must be 10 MB or smaller."
+                : "The attachment could not be uploaded.",
+          });
+          return;
+        }
+
+        res.status(400).json({
+          success: false,
+          message:
+            error instanceof Error
+              ? error.message
+              : "The attachment could not be uploaded.",
+        });
+        return;
+      }
+
+      next();
+    });
+  },
+    async (req: Request, res: Response) => {
+    let messageSaved = false;
+
     try {
-      const parsed = messageSchema.safeParse(req.body);
+      const parsed = messageSchema.safeParse({
+        content:
+          typeof req.body?.content === "string"
+            ? req.body.content.trim()
+            : "",
+      });
+
       if (!parsed.success) {
         res.status(400).json({
           success: false,
@@ -612,8 +914,21 @@ chatRoutes.post(
         });
         return;
       }
-      if (containsSensitiveData(parsed.data.content)) {
+
+      const content = parsed.data.content;
+
+      if (!content && !req.file) {
         res.status(400).json({
+          success: false,
+          message: "Enter a message or select an attachment.",
+        });
+        return;
+      }
+
+     if (containsSensitiveData(content)) {
+  await removeUploadedFile(req.file);
+
+  res.status(400).json({
           success: false,
           message:
             "Do not share passwords, codes, account/card numbers, balances, or other sensitive banking information in chat.",
@@ -621,26 +936,58 @@ chatRoutes.post(
         return;
       }
 
+if (req.file) {
+  const isValid = await validateUploadedFile(req.file);
+
+  if (!isValid) {
+    await removeUploadedFile(req.file);
+
+    res.status(400).json({
+      success: false,
+      message: "The uploaded file content is invalid or unsupported.",
+    });
+    return;
+  }
+}
+
       const employeeId = getEmployeeId(res)!;
       const conversationId = getRouteParam(req, "conversationId");
       const conversation = await findMembership(conversationId, employeeId);
+
       if (!conversation) {
-        res.status(isValidId(conversationId) ? 404 : 400).json({
+  await removeUploadedFile(req.file);
+
+  res.status(isValidId(conversationId) ? 404 : 400).json({
           success: false,
           message: "Conversation not found.",
         });
         return;
       }
 
+      const attachment = req.file
+        ? {
+            originalName: path.basename(req.file.originalname).slice(0, 255),
+            storageName: req.file.filename,
+            mimeType: req.file.mimetype,
+            sizeBytes: req.file.size,
+          }
+        : undefined;
+
       const message = await ChatMessage.create({
         conversationId,
         senderId: employeeId,
-        content: parsed.data.content,
+        content,
+        ...(attachment ? { attachment } : {}),
       });
+            messageSaved = true;
+
       conversation.lastMessageId = message._id;
-      conversation.lastMessagePreview = parsed.data.content.slice(0, 160);
+      conversation.lastMessagePreview = content
+        ? content.slice(0, 160)
+        : `Attachment: ${attachment?.originalName ?? "file"}`;
       conversation.lastMessageAt = message.createdAt;
       await conversation.save();
+
       await ChatConversation.updateOne(
         {
           _id: conversationId,
@@ -651,6 +998,7 @@ chatRoutes.post(
       );
 
       const sender = await Customer.findById(employeeId).select("name role");
+
       const serialized = {
         id: String(message._id),
         conversationId,
@@ -660,10 +1008,19 @@ chatRoutes.post(
           role: sender?.role ?? "staff",
         },
         content: message.content,
+        attachment: attachment
+          ? {
+              originalName: attachment.originalName,
+              mimeType: attachment.mimeType,
+              sizeBytes: attachment.sizeBytes,
+              downloadUrl: `/api/chat/messages/${message._id}/attachment`,
+            }
+          : null,
         reactions: [],
         createdAt: message.createdAt,
         updatedAt: message.updatedAt,
       };
+
       emitChatEvent(conversationId, "chat:message", serialized);
 
       const recipients: string[] = conversation.participants
@@ -673,14 +1030,21 @@ chatRoutes.post(
             String(participant.customerId) !== employeeId
         )
         .map((participant: any) => String(participant.customerId));
-      const preview = getSafeNotificationPreview(parsed.data.content);
+
+      const preview = getSafeNotificationPreview(content);
+      const notificationMessage = preview
+        ? `Message: ${preview}`
+        : attachment
+          ? `Attachment: ${attachment.originalName}`
+          : "Open the chat to view it.";
+
       await Promise.all(
         recipients.map((recipientId) =>
           createChatNotification(recipientId, {
             title: sender?.name
               ? `New message from ${sender.name}`
               : "New employee chat message",
-            message: preview ? `Message: ${preview}` : "Open the chat to view it.",
+            message: notificationMessage,
             eventType: "message",
             conversationId,
             relatedMessageId: String(message._id),
@@ -688,10 +1052,19 @@ chatRoutes.post(
           })
         )
       );
+
       res.status(201).json({ success: true, message: serialized });
-    } catch (error) {
+        } catch (error) {
+      if (!messageSaved) {
+        await removeUploadedFile(req.file);
+      }
+
       logChatFailure("message send", error);
-      res.status(500).json({ success: false, message: "Could not send the message." });
+
+      res.status(500).json({
+        success: false,
+        message: "Could not send the message.",
+      });
     }
   }
 );

@@ -1,11 +1,14 @@
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 import {
   ArrowDown,
   Check,
   Circle,
+  FileText,
   LoaderCircle,
   MessageCircle,
+  Paperclip,
   Plus,
   Send,
   Users,
@@ -20,6 +23,7 @@ import {
 import "./InternalMessagesView.css";
 
 const REACTION_EMOJIS = ["👍", "❤️", "😂", "👏", "🎉", "😮"];
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 
 interface InternalMessagesViewProps {
   token: string;
@@ -57,6 +61,15 @@ export function InternalMessagesView({
   const [activeConversationId, setActiveConversationId] = useState("");
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [filePreviewUrl, setFilePreviewUrl] = useState<string | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const socketRef = useRef<Socket | null>(null);
+  const activeConversationIdRef = useRef("");
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const typingTimeoutRef = useRef<number | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sending, setSending] = useState(false);
@@ -66,26 +79,27 @@ export function InternalMessagesView({
   const [error, setError] = useState("");
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [typingName, setTypingName] = useState("");
+
   const [showGroupForm, setShowGroupForm] = useState(false);
   const [groupName, setGroupName] = useState("");
   const [groupDescription, setGroupDescription] = useState("");
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
+
   const [showMemberManager, setShowMemberManager] = useState(false);
   const [newMemberId, setNewMemberId] = useState("");
   const [newMemberIsAdmin, setNewMemberIsAdmin] = useState(false);
-  const socketRef = useRef<Socket | null>(null);
-  const activeConversationIdRef = useRef("");
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-  const typingTimeoutRef = useRef<number | null>(null);
 
   const activeConversation = conversations.find(
     (conversation) => conversation.id === activeConversationId
   );
+
   activeConversationIdRef.current = activeConversationId;
 
   const visibleConversations = useMemo(() => {
     const normalized = search.trim().toLocaleLowerCase();
+
     if (!normalized) return conversations;
+
     return conversations.filter((conversation) =>
       conversation.name.toLocaleLowerCase().includes(normalized)
     );
@@ -93,7 +107,9 @@ export function InternalMessagesView({
 
   const visibleEmployees = useMemo(() => {
     const normalized = search.trim().toLocaleLowerCase();
+
     if (!normalized) return employees;
+
     return employees.filter(
       (employee) =>
         employee.name.toLocaleLowerCase().includes(normalized) ||
@@ -117,8 +133,10 @@ export function InternalMessagesView({
 
   useEffect(() => {
     let active = true;
+
     setLoading(true);
     setError("");
+
     void Promise.all([loadConversations(), loadEmployees("")])
       .catch((loadError: unknown) => {
         if (active) {
@@ -132,6 +150,7 @@ export function InternalMessagesView({
       .finally(() => {
         if (active) setLoading(false);
       });
+
     return () => {
       active = false;
     };
@@ -147,6 +166,7 @@ export function InternalMessagesView({
         );
       });
     }, 220);
+
     return () => window.clearTimeout(timeout);
   }, [loadEmployees, search]);
 
@@ -157,14 +177,17 @@ export function InternalMessagesView({
       reconnection: true,
       reconnectionAttempts: 8,
     });
+
     socketRef.current = socket;
+
     socket.on("connect", () => {
       setConnectionState("connected");
+
       if (activeConversationIdRef.current) {
         const conversationId = activeConversationIdRef.current;
-        socket.emit("chat:join", {
-          conversationId,
-        });
+
+        socket.emit("chat:join", { conversationId });
+
         void api
           .getChatMessages(token, conversationId)
           .then((result) => {
@@ -175,6 +198,7 @@ export function InternalMessagesView({
                   message,
                 ])
               );
+
               return [...byId.values()].sort(
                 (left, right) =>
                   new Date(left.createdAt).getTime() -
@@ -190,10 +214,13 @@ export function InternalMessagesView({
             );
           });
       }
+
       void loadConversations();
     });
+
     socket.on("disconnect", () => setConnectionState("disconnected"));
     socket.on("connect_error", () => setConnectionState("disconnected"));
+
     socket.on("chat:message", (message: ChatMessageItem) => {
       if (activeConversationIdRef.current === message.conversationId) {
         setMessages((previous) =>
@@ -202,13 +229,18 @@ export function InternalMessagesView({
             : [...previous, message]
         );
       }
+
       setConversations((previous) =>
         previous.map((conversation) =>
           conversation.id !== message.conversationId
             ? conversation
             : {
                 ...conversation,
-                lastMessagePreview: message.content.slice(0, 160),
+                lastMessagePreview:
+                  message.content ||
+                  (message.attachment
+                    ? `Attachment: ${message.attachment.originalName}`
+                    : ""),
                 lastMessageAt: message.createdAt,
                 lastMessageSenderId: message.sender.id,
                 unreadCount:
@@ -220,6 +252,7 @@ export function InternalMessagesView({
         )
       );
     });
+
     socket.on(
       "chat:reaction",
       (update: {
@@ -235,19 +268,28 @@ export function InternalMessagesView({
         );
       }
     );
+
     socket.on(
       "chat:typing",
-      (event: { conversationId: string; employeeId: string; name: string; isTyping: boolean }) => {
+      (event: {
+        conversationId: string;
+        employeeId: string;
+        name: string;
+        isTyping: boolean;
+      }) => {
         if (
           event.conversationId !== activeConversationIdRef.current ||
           event.employeeId === employeeId
         ) {
           return;
         }
+
         setTypingName(event.isTyping ? event.name : "");
+
         if (typingTimeoutRef.current) {
           window.clearTimeout(typingTimeoutRef.current);
         }
+
         if (event.isTyping) {
           typingTimeoutRef.current = window.setTimeout(
             () => setTypingName(""),
@@ -256,35 +298,43 @@ export function InternalMessagesView({
         }
       }
     );
-    socket.on("chat:presence", (event: { employeeId: string; online: boolean }) => {
-      setEmployees((previous) =>
-        previous.map((employee) =>
-          employee.id === event.employeeId
-            ? { ...employee, online: event.online }
-            : employee
-        )
-      );
-      setConversations((previous) =>
-        previous.map((conversation) => ({
-          ...conversation,
-          participants: conversation.participants.map((participant) =>
-            participant.id === event.employeeId
-              ? { ...participant, online: event.online }
-              : participant
-          ),
-        }))
-      );
-    });
+
+    socket.on(
+      "chat:presence",
+      (event: { employeeId: string; online: boolean }) => {
+        setEmployees((previous) =>
+          previous.map((employee) =>
+            employee.id === event.employeeId
+              ? { ...employee, online: event.online }
+              : employee
+          )
+        );
+
+        setConversations((previous) =>
+          previous.map((conversation) => ({
+            ...conversation,
+            participants: conversation.participants.map((participant) =>
+              participant.id === event.employeeId
+                ? { ...participant, online: event.online }
+                : participant
+            ),
+          }))
+        );
+      }
+    );
+
     socket.on(
       "chat:presence:snapshot",
       (event: { onlineEmployeeIds: string[] }) => {
         const onlineEmployees = new Set(event.onlineEmployeeIds);
+
         setEmployees((previous) =>
           previous.map((employee) => ({
             ...employee,
             online: onlineEmployees.has(employee.id),
           }))
         );
+
         setConversations((previous) =>
           previous.map((conversation) => ({
             ...conversation,
@@ -296,12 +346,15 @@ export function InternalMessagesView({
         );
       }
     );
+
     socket.on("chat:membership-added", () => {
       void loadConversations();
     });
+
     socket.on("chat:membership-changed", () => {
       void loadConversations();
     });
+
     socket.on(
       "chat:membership-removed",
       (event: { conversationId: string }) => {
@@ -310,6 +363,7 @@ export function InternalMessagesView({
           setMessages([]);
           onToast("You no longer have access to that group.");
         }
+
         void loadConversations();
       }
     );
@@ -318,17 +372,20 @@ export function InternalMessagesView({
       if (typingTimeoutRef.current) {
         window.clearTimeout(typingTimeoutRef.current);
       }
+
       socket.disconnect();
       socketRef.current = null;
     };
-    // Active conversation checks in these event handlers are intentionally based on current page state.
+    // Active conversation checks intentionally use the current page state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, employeeId, loadConversations, onToast]);
 
   useEffect(() => {
     if (
       initialConversationId &&
-      conversations.some((conversation) => conversation.id === initialConversationId)
+      conversations.some(
+        (conversation) => conversation.id === initialConversationId
+      )
     ) {
       setActiveConversationId(initialConversationId);
     }
@@ -340,23 +397,30 @@ export function InternalMessagesView({
       setNextCursor(null);
       return;
     }
+
     let active = true;
     setLoadingMessages(true);
     setError("");
+
     const previousId = activeConversationId;
+
     void api
       .getChatMessages(token, activeConversationId)
       .then((result) => {
         if (!active) return;
+
         setMessages(result.messages);
         setNextCursor(result.nextCursor);
+
         socketRef.current?.emit("chat:join", {
           conversationId: activeConversationId,
         });
+
         void api
           .markChatConversationRead(token, activeConversationId)
           .then(() => loadConversations())
           .catch(() => undefined);
+
         scrollRef.current?.scrollTo({
           top: scrollRef.current.scrollHeight,
         });
@@ -373,9 +437,12 @@ export function InternalMessagesView({
       .finally(() => {
         if (active) setLoadingMessages(false);
       });
+
     return () => {
       active = false;
-      socketRef.current?.emit("chat:leave", { conversationId: previousId });
+      socketRef.current?.emit("chat:leave", {
+        conversationId: previousId,
+      });
     };
   }, [activeConversationId, token, loadConversations]);
 
@@ -399,35 +466,64 @@ export function InternalMessagesView({
     }
   };
 
+  const removeSelectedFile = () => {
+    if (filePreviewUrl) {
+      URL.revokeObjectURL(filePreviewUrl);
+    }
+
+    setSelectedFile(null);
+    setFilePreviewUrl(null);
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
   const sendMessage = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!activeConversation || !draft.trim() || sending) return;
+
+    if (
+      !activeConversation ||
+      (!draft.trim() && !selectedFile) ||
+      sending
+    ) {
+      return;
+    }
+
     setSending(true);
     setError("");
+
     const content = draft.trim();
-    setDraft("");
+
     socketRef.current?.emit("chat:typing", {
       conversationId: activeConversation.id,
       isTyping: false,
     });
+
     try {
       const result = await api.sendChatMessage(
         token,
         activeConversation.id,
-        content
+        content,
+        selectedFile ?? undefined
       );
+
       setMessages((previous) =>
         previous.some((message) => message.id === result.message.id)
           ? previous
           : [...previous, result.message]
       );
+
+      setDraft("");
+      removeSelectedFile();
+
       void loadConversations();
+
       scrollRef.current?.scrollTo({
         top: scrollRef.current.scrollHeight,
         behavior: "smooth",
       });
     } catch (sendError) {
-      setDraft(content);
       setError(
         sendError instanceof Error
           ? sendError.message
@@ -440,31 +536,45 @@ export function InternalMessagesView({
 
   const loadOlderMessages = async () => {
     if (!activeConversationId || !nextCursor) return;
-    const result = await api.getChatMessages(
-      token,
-      activeConversationId,
-      nextCursor
-    );
-    setMessages((previous) => [...result.messages, ...previous]);
-    setNextCursor(result.nextCursor);
+
+    try {
+      const result = await api.getChatMessages(
+        token,
+        activeConversationId,
+        nextCursor
+      );
+
+      setMessages((previous) => [...result.messages, ...previous]);
+      setNextCursor(result.nextCursor);
+    } catch (loadError) {
+      onToast(
+        loadError instanceof Error
+          ? loadError.message
+          : "Could not load older messages."
+      );
+    }
   };
 
   const createGroup = async (event: React.FormEvent) => {
     event.preventDefault();
+
     if (selectedMembers.length < 1) {
       onToast("Select at least one employee for the group.");
       return;
     }
+
     try {
       const result = await api.createChatGroup(token, {
         name: groupName,
         description: groupDescription,
         memberIds: selectedMembers,
       });
+
       setShowGroupForm(false);
       setGroupName("");
       setGroupDescription("");
       setSelectedMembers([]);
+
       await loadConversations();
       setActiveConversationId(result.conversation.id);
     } catch (groupError) {
@@ -478,6 +588,7 @@ export function InternalMessagesView({
 
   const addMember = async () => {
     if (!activeConversation || !newMemberId) return;
+
     try {
       await api.addChatGroupMember(
         token,
@@ -485,27 +596,36 @@ export function InternalMessagesView({
         newMemberId,
         newMemberIsAdmin
       );
+
       setNewMemberId("");
       setNewMemberIsAdmin(false);
+
       await loadConversations();
       onToast("Employee added to the group.");
     } catch (addError) {
       onToast(
-        addError instanceof Error ? addError.message : "Could not add the employee."
+        addError instanceof Error
+          ? addError.message
+          : "Could not add the employee."
       );
     }
   };
 
   const removeMember = async (memberId: string) => {
-    if (!activeConversation || !window.confirm("Remove this employee from the group?")) {
+    if (
+      !activeConversation ||
+      !window.confirm("Remove this employee from the group?")
+    ) {
       return;
     }
+
     try {
       await api.removeChatGroupMember(
         token,
         activeConversation.id,
         memberId
       );
+
       await loadConversations();
       onToast("Employee removed from the group.");
     } catch (removeError) {
@@ -518,30 +638,91 @@ export function InternalMessagesView({
   };
 
   const leaveGroup = async () => {
-    if (!activeConversation || !window.confirm("Leave this group?")) return;
+    if (
+      !activeConversation ||
+      !window.confirm("Leave this group?")
+    ) {
+      return;
+    }
+
     try {
       await api.leaveChatGroup(token, activeConversation.id);
+
       setActiveConversationId("");
       setMessages([]);
+
       await loadConversations();
       onToast("You left the group.");
     } catch (leaveError) {
       onToast(
-        leaveError instanceof Error ? leaveError.message : "Could not leave the group."
+        leaveError instanceof Error
+          ? leaveError.message
+          : "Could not leave the group."
       );
     }
   };
 
-  const updateReaction = async (message: ChatMessageItem, emoji: string) => {
+  const downloadChatAttachment = async (message: ChatMessageItem) => {
+    if (!message.attachment) return;
+
+    try {
+      const downloadUrl = message.attachment.downloadUrl;
+
+      // Preserve URLs that already include /api to avoid duplicating the prefix.
+      const downloadPath = downloadUrl.startsWith("/api/")
+        ? downloadUrl
+        : `/api${downloadUrl.startsWith("/") ? "" : "/"}${downloadUrl}`;
+
+      const response = await fetch(
+        `${api.getChatSocketUrl()}${downloadPath}`,
+        {
+          credentials: "include",
+        }
+      );
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+
+        throw new Error(
+          data?.message || `Download failed (${response.status}).`
+        );
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+
+      link.href = objectUrl;
+      link.download = message.attachment.originalName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    } catch (downloadError) {
+      onToast(
+        downloadError instanceof Error
+          ? downloadError.message
+          : "Could not download this attachment."
+      );
+    }
+  };
+
+  const updateReaction = async (
+    message: ChatMessageItem,
+    emoji: string
+  ) => {
     const existing = message.reactions.find(
       (reaction) => reaction.emoji === emoji && reaction.reactedByMe
     );
+
     try {
       const result = await api.setChatReaction(
         token,
         message.id,
         existing ? null : emoji
       );
+
       setMessages((previous) =>
         previous.map((item) =>
           item.id === message.id
@@ -560,6 +741,7 @@ export function InternalMessagesView({
 
   const updateTyping = (value: string) => {
     setDraft(value);
+
     if (activeConversation && socketRef.current?.connected) {
       socketRef.current.emit("chat:typing", {
         conversationId: activeConversation.id,
@@ -568,14 +750,68 @@ export function InternalMessagesView({
     }
   };
 
+  const handleFileSelect = (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+
+    if (!file) return;
+
+    const allowedTypes: Record<string, string[]> = {
+      "image/jpeg": [".jpg", ".jpeg"],
+      "image/png": [".png"],
+      "image/webp": [".webp"],
+      "application/pdf": [".pdf"],
+      "text/plain": [".txt"],
+      "text/csv": [".csv"],
+    };
+
+    const extension = `.${file.name.split(".").pop()?.toLowerCase() ?? ""}`;
+    const allowedExtensions = allowedTypes[file.type];
+
+    if (file.size > MAX_FILE_SIZE) {
+      onToast("File size must be 10 MB or less.");
+      event.target.value = "";
+      return;
+    }
+
+    if (!allowedExtensions?.includes(extension)) {
+      onToast("Allowed files: JPG, PNG, WEBP, PDF, TXT, and CSV.");
+      event.target.value = "";
+      return;
+    }
+
+    if (filePreviewUrl) {
+      URL.revokeObjectURL(filePreviewUrl);
+    }
+
+    setSelectedFile(file);
+    setFilePreviewUrl(
+      file.type.startsWith("image/")
+        ? URL.createObjectURL(file)
+        : null
+    );
+  };
+
+  useEffect(() => {
+    return () => {
+      if (filePreviewUrl) {
+        URL.revokeObjectURL(filePreviewUrl);
+      }
+    };
+  }, [filePreviewUrl]);
+
   return (
     <section className="internal-chat">
       <header className="internal-chat-heading">
         <div>
-          <span className="internal-chat-eyebrow">VaultBank • Employee workspace</span>
+          <span className="internal-chat-eyebrow">
+            VaultBank • Employee workspace
+          </span>
           <h1>Internal Messages</h1>
           <p>Private conversations for authorized bank employees.</p>
         </div>
+
         <div className={`chat-connection ${connectionState}`}>
           <Circle size={9} fill="currentColor" />
           {connectionState === "connected"
@@ -589,7 +825,11 @@ export function InternalMessagesView({
       {error && (
         <div className="chat-error" role="alert">
           {error}
-          <button type="button" aria-label="Dismiss error" onClick={() => setError("")}>
+          <button
+            type="button"
+            aria-label="Dismiss error"
+            onClick={() => setError("")}
+          >
             <X size={16} />
           </button>
         </div>
@@ -605,6 +845,7 @@ export function InternalMessagesView({
               placeholder="Search conversations or employees"
               aria-label="Search conversations and employees"
             />
+
             <button
               type="button"
               className="chat-icon-button"
@@ -615,12 +856,19 @@ export function InternalMessagesView({
               <Plus size={18} />
             </button>
           </div>
+
           <div className="chat-sidebar-scroll">
             <h2>Conversations</h2>
+
             {loading ? (
-              <p className="chat-muted"><LoaderCircle className="chat-spin" size={15} /> Loading…</p>
+              <p className="chat-muted">
+                <LoaderCircle className="chat-spin" size={15} />
+                {" "}Loading…
+              </p>
             ) : visibleConversations.length === 0 ? (
-              <p className="chat-muted">No conversations yet. Search employees to start one.</p>
+              <p className="chat-muted">
+                No conversations yet. Search employees to start one.
+              </p>
             ) : (
               visibleConversations.map((conversation) => (
                 <button
@@ -629,7 +877,9 @@ export function InternalMessagesView({
                   className={`chat-conversation-item ${
                     activeConversationId === conversation.id ? "active" : ""
                   }`}
-                  onClick={() => setActiveConversationId(conversation.id)}
+                  onClick={() =>
+                    setActiveConversationId(conversation.id)
+                  }
                 >
                   <span className="chat-avatar">
                     {conversation.type === "group" ? (
@@ -638,6 +888,7 @@ export function InternalMessagesView({
                       getInitials(conversation.name)
                     )}
                   </span>
+
                   <span className="chat-conversation-text">
                     <span className="chat-conversation-title">
                       {conversation.name}
@@ -646,13 +897,19 @@ export function InternalMessagesView({
                       {conversation.lastMessagePreview || "No messages yet"}
                     </span>
                   </span>
+
                   <span className="chat-conversation-meta">
                     {conversation.lastMessageAt && (
                       <time>{displayTime(conversation.lastMessageAt)}</time>
                     )}
+
                     {conversation.unreadCount > 0 && (
-                      <b aria-label={`${conversation.unreadCount} unread messages`}>
-                        {conversation.unreadCount > 99 ? "99+" : conversation.unreadCount}
+                      <b
+                        aria-label={`${conversation.unreadCount} unread messages`}
+                      >
+                        {conversation.unreadCount > 99
+                          ? "99+"
+                          : conversation.unreadCount}
                       </b>
                     )}
                   </span>
@@ -661,8 +918,11 @@ export function InternalMessagesView({
             )}
 
             <h2 className="chat-directory-heading">Employees</h2>
+
             {visibleEmployees.length === 0 ? (
-              <p className="chat-muted">No employees match this search.</p>
+              <p className="chat-muted">
+                No employees match this search.
+              </p>
             ) : (
               visibleEmployees.map((employee) => (
                 <button
@@ -675,13 +935,17 @@ export function InternalMessagesView({
                     {getInitials(employee.name)}
                     <i className={employee.online ? "online" : ""} />
                   </span>
+
                   <span>
                     <strong>{employee.name}</strong>
                     <small>
                       {employee.role}
-                      {employee.employeeId ? ` · ${employee.employeeId}` : ""}
+                      {employee.employeeId
+                        ? ` · ${employee.employeeId}`
+                        : ""}
                     </small>
                   </span>
+
                   <MessageCircle size={15} />
                 </button>
               ))
@@ -694,7 +958,10 @@ export function InternalMessagesView({
             <div className="chat-empty">
               <MessageCircle size={36} />
               <h2>Your conversations</h2>
-              <p>Choose an employee or conversation to start a secure internal chat.</p>
+              <p>
+                Choose an employee or conversation to start a secure internal
+                chat.
+              </p>
             </div>
           ) : (
             <>
@@ -706,106 +973,126 @@ export function InternalMessagesView({
                     getInitials(activeConversation.name)
                   )}
                 </span>
+
                 <div>
                   <h2>{activeConversation.name}</h2>
                   <span>
                     {activeConversation.type === "group"
                       ? `${activeConversation.participantCount} members`
                       : activeConversation.participants.find(
-                          (participant) => participant.id !== employeeId
-                        )?.online
+                            (participant) =>
+                              participant.id !== employeeId
+                          )?.online
                         ? "Online"
                         : "Employee conversation"}
                   </span>
                 </div>
+
                 {activeConversation.type === "group" && (
                   <button
                     type="button"
                     className="btn btn-secondary chat-manage-button"
-                    onClick={() => setShowMemberManager((value) => !value)}
+                    onClick={() =>
+                      setShowMemberManager((value) => !value)
+                    }
                   >
                     <Users size={15} /> Members
                   </button>
                 )}
               </header>
 
-              {showMemberManager && activeConversation.type === "group" && (
-                <div className="chat-member-manager">
-                  <div className="chat-member-list">
-                    {activeConversation.participants.map((participant) => (
-                      <div key={participant.id}>
-                        <span>
-                          {participant.name}
-                          <small>
-                            {participant.role}
-                            {participant.isAdmin ? " · Admin" : ""}
-                          </small>
-                        </span>
-                        {activeConversation.isAdmin &&
-                          participant.id !== employeeId && (
-                            <button
-                              type="button"
-                              className="chat-text-button danger"
-                              onClick={() => void removeMember(participant.id)}
-                            >
-                              Remove
-                            </button>
-                          )}
-                      </div>
-                    ))}
-                  </div>
-                  {activeConversation.isAdmin && (
-                    <div className="chat-add-member">
-                      <select
-                        value={newMemberId}
-                        onChange={(event) => setNewMemberId(event.target.value)}
-                        aria-label="Select employee to add"
-                      >
-                        <option value="">Add an employee…</option>
-                        {employees
-                          .filter(
-                            (employee) =>
-                              !activeConversation.participants.some(
-                                (participant) => participant.id === employee.id
-                              )
-                          )
-                          .map((employee) => (
-                            <option key={employee.id} value={employee.id}>
-                              {employee.name} · {employee.role}
-                            </option>
-                          ))}
-                      </select>
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        disabled={!newMemberId}
-                        onClick={() => void addMember()}
-                      >
-                        Add
-                      </button>
+              {showMemberManager &&
+                activeConversation.type === "group" && (
+                  <div className="chat-member-manager">
+                    <div className="chat-member-list">
+                      {activeConversation.participants.map((participant) => (
+                        <div key={participant.id}>
+                          <span>
+                            {participant.name}
+                            <small>
+                              {participant.role}
+                              {participant.isAdmin ? " · Admin" : ""}
+                            </small>
+                          </span>
+
+                          {activeConversation.isAdmin &&
+                            participant.id !== employeeId && (
+                              <button
+                                type="button"
+                                className="chat-text-button danger"
+                                onClick={() =>
+                                  void removeMember(participant.id)
+                                }
+                              >
+                                Remove
+                              </button>
+                            )}
+                        </div>
+                      ))}
                     </div>
-                  )}
-                  {activeConversation.isAdmin && (
-                    <label className="chat-promote-member">
-                      <input
-                        type="checkbox"
-                        checked={newMemberIsAdmin}
-                        onChange={(event) =>
-                          setNewMemberIsAdmin(event.target.checked)
-                        }
-                      />
-                      Make the new member a group admin
-                    </label>
-                  )}
-                  <button
-                    type="button"
-                    className="chat-text-button danger"
-                    onClick={() => void leaveGroup()}
-                  >
-                    Leave group
-                  </button>
-                </div>
-              )}
+
+                    {activeConversation.isAdmin && (
+                      <div className="chat-add-member">
+                        <select
+                          value={newMemberId}
+                          onChange={(event) =>
+                            setNewMemberId(event.target.value)
+                          }
+                          aria-label="Select employee to add"
+                        >
+                          <option value="">Add an employee…</option>
+
+                          {employees
+                            .filter(
+                              (employee) =>
+                                !activeConversation.participants.some(
+                                  (participant) =>
+                                    participant.id === employee.id
+                                )
+                            )
+                            .map((employee) => (
+                              <option
+                                key={employee.id}
+                                value={employee.id}
+                              >
+                                {employee.name} · {employee.role}
+                              </option>
+                            ))}
+                        </select>
+
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          disabled={!newMemberId}
+                          onClick={() => void addMember()}
+                        >
+                          Add
+                        </button>
+                      </div>
+                    )}
+
+                    {activeConversation.isAdmin && (
+                      <label className="chat-promote-member">
+                        <input
+                          type="checkbox"
+                          checked={newMemberIsAdmin}
+                          onChange={(event) =>
+                            setNewMemberIsAdmin(event.target.checked)
+                          }
+                        />
+                        Make the new member a group admin
+                      </label>
+                    )}
+
+                    <button
+                      type="button"
+                      className="chat-text-button danger"
+                      onClick={() => void leaveGroup()}
+                    >
+                      Leave group
+                    </button>
+                  </div>
+                )}
 
               <div className="chat-message-list" ref={scrollRef}>
                 {nextCursor && (
@@ -817,6 +1104,7 @@ export function InternalMessagesView({
                     <ArrowDown size={14} /> Load older messages
                   </button>
                 )}
+
                 {loadingMessages ? (
                   <div className="chat-empty compact">
                     <LoaderCircle className="chat-spin" size={22} />
@@ -829,6 +1117,7 @@ export function InternalMessagesView({
                 ) : (
                   messages.map((message) => {
                     const mine = message.sender.id === employeeId;
+
                     return (
                       <article
                         key={message.id}
@@ -839,6 +1128,7 @@ export function InternalMessagesView({
                             {getInitials(message.sender.name)}
                           </span>
                         )}
+
                         <div className="chat-message-body">
                           <div className="chat-message-meta">
                             {!mine && (
@@ -850,28 +1140,82 @@ export function InternalMessagesView({
                             )}
                             <time>{displayTime(message.createdAt)}</time>
                           </div>
-                          <div className="chat-bubble">{message.content}</div>
+
+                          {message.content && (
+                            <div className="chat-bubble">
+                              {message.content}
+                            </div>
+                          )}
+
+                          {message.attachment && (
+                            <div className="chat-attachment">
+                              {message.attachment.mimeType.startsWith(
+                                "image/"
+                              ) ? (
+                                <div className="chat-attachment-image-placeholder">
+                                  <FileText size={24} />
+                                </div>
+                              ) : (
+                                <FileText size={24} />
+                              )}
+
+                              <div className="chat-attachment-details">
+                                <strong>
+                                  {message.attachment.originalName}
+                                </strong>
+                                <span>
+                                  {(
+                                    message.attachment.sizeBytes / 1024
+                                  ).toFixed(1)}{" "}
+                                  KB
+                                </span>
+                              </div>
+
+                              <button
+                                type="button"
+                                className="chat-text-button"
+                                onClick={() =>
+                                  void downloadChatAttachment(message)
+                                }
+                              >
+                                Download
+                              </button>
+                            </div>
+                          )}
+
                           <div className="chat-reactions">
                             {message.reactions.map((reaction) => (
                               <button
                                 type="button"
                                 key={reaction.emoji}
-                                className={reaction.reactedByMe ? "reacted" : ""}
-                                onClick={() => void updateReaction(message, reaction.emoji)}
+                                className={
+                                  reaction.reactedByMe ? "reacted" : ""
+                                }
+                                onClick={() =>
+                                  void updateReaction(
+                                    message,
+                                    reaction.emoji
+                                  )
+                                }
                                 aria-label={`${reaction.emoji} reaction, ${reaction.count} people`}
                               >
                                 {reaction.emoji} {reaction.count}
                               </button>
                             ))}
+
                             <details className="chat-reaction-picker">
-                              <summary aria-label="React to message">☺</summary>
+                              <summary aria-label="React to message">
+                                ☺
+                              </summary>
                               <div>
                                 {REACTION_EMOJIS.map((emoji) => (
                                   <button
                                     type="button"
                                     key={emoji}
                                     aria-label={`React ${emoji}`}
-                                    onClick={() => void updateReaction(message, emoji)}
+                                    onClick={() =>
+                                      void updateReaction(message, emoji)
+                                    }
                                   >
                                     {emoji}
                                   </button>
@@ -887,21 +1231,81 @@ export function InternalMessagesView({
               </div>
 
               <div className="chat-compose-area">
+                {selectedFile && (
+                  <div className="chat-file-preview">
+                    {filePreviewUrl ? (
+                      <img
+                        src={filePreviewUrl}
+                        alt="Selected attachment preview"
+                        className="chat-file-preview__image"
+                      />
+                    ) : (
+                      <FileText size={28} />
+                    )}
+
+                    <div className="chat-file-preview__details">
+                      <strong>{selectedFile.name}</strong>
+                      <span>
+                        {(selectedFile.size / 1024).toFixed(1)} KB
+                      </span>
+                      <span>Ready to send</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="chat-icon-button"
+                      onClick={removeSelectedFile}
+                      aria-label="Remove selected file"
+                      title="Remove file"
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+                )}
+
                 {typingName && (
                   <div className="chat-typing" aria-live="polite">
                     {typingName} is typing…
                   </div>
                 )}
+
                 <p className="chat-privacy-note">
-                  Do not share passwords, one-time codes, account or card numbers,
-                  balances, or KYC documents in chat.
+                  Do not share passwords, one-time codes, account or card
+                  numbers, balances, or KYC documents in chat.
                 </p>
+
                 <form className="chat-compose" onSubmit={sendMessage}>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    hidden
+                    accept=".jpg,.jpeg,.png,.webp,.pdf,.txt,.csv"
+                    onChange={handleFileSelect}
+                  />
+
+                  <button
+                    type="button"
+                    className="chat-icon-button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={
+                      sending || connectionState !== "connected"
+                    }
+                    aria-label="Attach file"
+                    title="Attach file"
+                  >
+                    <Paperclip size={18} />
+                  </button>
+
                   <textarea
                     value={draft}
-                    onChange={(event) => updateTyping(event.target.value)}
+                    onChange={(event) =>
+                      updateTyping(event.target.value)
+                    }
                     onKeyDown={(event) => {
-                      if (event.key === "Enter" && !event.shiftKey) {
+                      if (
+                        event.key === "Enter" &&
+                        !event.shiftKey
+                      ) {
                         event.preventDefault();
                         event.currentTarget.form?.requestSubmit();
                       }
@@ -910,15 +1314,29 @@ export function InternalMessagesView({
                     rows={2}
                     placeholder="Write a message…"
                     aria-label="Message"
-                    disabled={sending || connectionState !== "connected"}
+                    disabled={
+                      sending || connectionState !== "connected"
+                    }
                   />
+
                   <button
                     type="submit"
                     className="btn btn-primary"
-                    disabled={!draft.trim() || sending || connectionState !== "connected"}
+                    disabled={
+                      (!draft.trim() && !selectedFile) ||
+                      sending ||
+                      connectionState !== "connected"
+                    }
                     aria-label="Send message"
                   >
-                    {sending ? <LoaderCircle className="chat-spin" size={17} /> : <Send size={17} />}
+                    {sending ? (
+                      <LoaderCircle
+                        className="chat-spin"
+                        size={17}
+                      />
+                    ) : (
+                      <Send size={17} />
+                    )}
                     Send
                   </button>
                 </form>
@@ -944,33 +1362,50 @@ export function InternalMessagesView({
           >
             <header>
               <div>
-                <h2 id="create-group-title">Create employee group</h2>
-                <p>Only authorized employees can join this conversation.</p>
+                <h2 id="create-group-title">
+                  Create employee group
+                </h2>
+                <p>
+                  Only authorized employees can join this conversation.
+                </p>
               </div>
-              <button type="button" aria-label="Close" onClick={() => setShowGroupForm(false)}>
+
+              <button
+                type="button"
+                aria-label="Close"
+                onClick={() => setShowGroupForm(false)}
+              >
                 <X size={18} />
               </button>
             </header>
+
             <label>
               Group name
               <input
                 value={groupName}
-                onChange={(event) => setGroupName(event.target.value)}
+                onChange={(event) =>
+                  setGroupName(event.target.value)
+                }
                 minLength={2}
                 maxLength={80}
                 required
               />
             </label>
+
             <label>
               Description (optional)
               <input
                 value={groupDescription}
-                onChange={(event) => setGroupDescription(event.target.value)}
+                onChange={(event) =>
+                  setGroupDescription(event.target.value)
+                }
                 maxLength={250}
               />
             </label>
+
             <fieldset>
               <legend>Members (select at least one)</legend>
+
               <div className="chat-group-employee-list">
                 {employees.map((employee) => (
                   <label key={employee.id}>
@@ -981,7 +1416,9 @@ export function InternalMessagesView({
                         setSelectedMembers((previous) =>
                           event.target.checked
                             ? [...previous, employee.id]
-                            : previous.filter((id) => id !== employee.id)
+                            : previous.filter(
+                                (id) => id !== employee.id
+                              )
                         )
                       }
                     />
@@ -990,6 +1427,7 @@ export function InternalMessagesView({
                 ))}
               </div>
             </fieldset>
+
             <footer>
               <button
                 type="button"
@@ -998,7 +1436,11 @@ export function InternalMessagesView({
               >
                 Cancel
               </button>
-              <button type="submit" className="btn btn-primary">
+
+              <button
+                type="submit"
+                className="btn btn-primary"
+              >
                 <Check size={16} /> Create group
               </button>
             </footer>
